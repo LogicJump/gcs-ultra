@@ -1,0 +1,14 @@
+diff --git a/src/quick3d/qquick3dscenemanager.cpp b/src/quick3d/qquick3dscenemanager.cpp
+index b24ef2c..a876c06 100644
+--- a/src/quick3d/qquick3dscenemanager.cpp
++++ b/src/quick3d/qquick3dscenemanager.cpp
+@@ -688,2 +688,9 @@ void QQuick3DWindowAttachment::onInvalidated()
+ {
++    // Terminate scene managers that were queued after their View3D was destroyed.
++    for (auto *manager : std::as_const(sceneManagerCleanupQueue)) {
++        sceneManagers.removeOne(manager);
++        delete manager;
++    }
++    sceneManagerCleanupQueue.clear();
++
+     // Find all objects that have graphics resources and queue them
