@@ -14,9 +14,12 @@
 | 操作系统 | Windows 10 x64；当前验证主机为 `10.0.19045` |
 | 编译器 | Visual Studio 2022 的 MSVC v143 14.44 x64 工具集；验证编译器为 `19.44.35221` |
 | Qt | Qt 6.12.0，`msvc2022_64` 套件 |
-| Python | 3.10 或更高版本；当前工具环境为 3.10.11 |
+| Python | 推荐 3.12；安全 tar 解包要求 3.10.12+、3.11.4+ 或 3.12+ |
 | Python 工具 | 由 `tools/pyproject.toml` 和 `tools/uv.lock` 锁定；uv 至少为 0.12.8 |
 | GStreamer | 1.28.8 MSVC x86_64 开发套件 |
+
+工具的安全 tar 解包依赖 PEP 706 的 `tarfile.data_filter`。推荐使用 Python 3.12；若使用较旧分支，
+至少需要 Python 3.10.12 或 3.11.4。Python 3.10.11 缺少该能力，不能用于完整工具测试验收。
 
 已建立的全新基线如下。后续阶段提交与 `main` 最终提交不在本文件中固化，避免文档提交产生自引用哈希；由
 外部交接清单记录，并在目标机从实际仓库核对：
@@ -140,7 +143,7 @@ e4c41ee6ee9c6c32a45d198463ec08d79bac3bd5fa58adc93d13fe4a08abc9d9
 
 ## 目标机安装
 
-1. 安装 Git、Python 3.10 或更高版本，以及 Visual Studio 2022 Build Tools。
+1. 安装 Git、Python 3.12（推荐）以及 Visual Studio 2022 Build Tools。
 2. 在 Visual Studio Installer 中选择“使用 C++ 的桌面开发”，并确认 MSVC v143 14.44 x64/x86 工具和
    Windows SDK 已安装。
 3. 按 [uv 官方安装说明](https://docs.astral.sh/uv/getting-started/installation/) 安装 uv 0.12.8 或更高版本。
@@ -235,11 +238,15 @@ Ninja 1.13.0 和 just 1.55.1；目标机应以最终分支中的 `tools/uv.lock`
 `clang-format.exe` 子进程停滞而无法完成，且钩子可能临时改写无关文件；这不是目标机配置成功与否的判据。
 目标机应先在干净分支上运行改动范围检查，再尝试全量检查：
 
+新克隆的 `main` 与 `origin/main` 指向同一提交，以 `origin/main` 为基准会得到空改动列表；这里使用
+上述已记录的导入基线，并将两端提交传给 prek，以便格式检查沿用相同改动范围。
+
 ```powershell
-$defaultRef = git symbolic-ref refs/remotes/origin/HEAD
-$base = git merge-base $defaultRef HEAD
-$changed = @(git diff --name-only --diff-filter=ACMR "$base...HEAD")
-& uv run --frozen --project tools --group precommit prek run --files @changed
+$base = '1ace5716a69da4c5aa9f67da1e35475de5f5951b'
+git merge-base --is-ancestor $base HEAD
+if ($LASTEXITCODE -ne 0) { throw "当前提交不包含已记录的导入基线" }
+& uv run --frozen --project tools --group precommit prek run `
+    --from-ref $base --to-ref HEAD
 
 just lint
 ```
@@ -286,9 +293,12 @@ $env:PATH = "$Quick3DInstall\bin;$env:PATH"
 $env:QML2_IMPORT_PATH = "$Quick3DInstall\qml;$env:QT_DIR\qml"
 $env:QT_QUICK3D_OVERRIDE_ROOT = $Quick3DInstall
 
+$env:QT_FORCE_STDERR_LOGGING = "1"
 $env:JOBS = "1"
 just test
 ```
+
+`QT_FORCE_STDERR_LOGGING=1` 让 Windows QtTest 失败详情进入终端及重定向日志；仅设置 `QGC_TEST_VERBOSE` 不足。
 
 不要为这次原生 Windows 验证设置 `QSG_RHI_BACKEND`；Qt 默认使用 D3D11，已修补的 Quick3D DLL 通过上述
 进程级覆盖加载。原生 UI 测试在本次 Windows 10 工作站上并行运行会相互争用桌面与图形资源，出现已通过

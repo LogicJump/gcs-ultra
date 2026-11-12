@@ -79,8 +79,10 @@ tools/
 │   └── yamlfmt.yaml         # yamlfmt YAML formatter trial (manual hook)
 ├── debuggers/               # Debugger formatters, profiling, Android memory capture, Valgrind suppressions
 ├── generators/              # Code generation (MAVLink enums, config/settings QML)
+├── migration/               # Windows source migration and publication handoff
 ├── moccache/                # Content-addressed cache for Qt moc (AUTOMOC wrapper)
 ├── qgc_tools/               # Shared policy: Python environment, configure presets, Docker variants
+├── qtquick3d-cleanup/        # Isolated Qt Quick3D cleanup patch and reproducer
 ├── setup/                   # Environment setup scripts
 ├── simulation/              # Vehicle simulators
 ├── terrain/                 # Terrain tile generation package (see terrain_tiles.py)
