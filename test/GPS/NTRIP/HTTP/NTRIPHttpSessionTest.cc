@@ -132,6 +132,8 @@ void NTRIPHttpSessionTest::_retireFromDeliveryDetachesOwner()
     QVERIFY(session->open(caster.connectionConfig()).isEmpty());
     auto* connection = caster.waitForConnection();
     QVERIFY(connection && connection->peer);
+    // Consume the request before closing the caster to avoid losing the response on Windows.
+    QCOMPARE(connection->waitForRequest(), requestFor(caster.connectionConfig()));
     const QByteArray response = "HTTP/1.1 200 OK\r\n\r\n" + QByteArray(2 * NTRIPHttpSession::READ_CHUNK_BYTES, 'x');
     QCOMPARE(connection->write(response), response.size());
     connection->disconnectFromHost();
