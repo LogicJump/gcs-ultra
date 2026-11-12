@@ -17,4 +17,6 @@ public:
 private slots:
     void _testPageFitsHerelinkWidth_data();
     void _testPageFitsHerelinkWidth();
+    void _testGroupsUseAvailableWidth_data();
+    void _testGroupsUseAvailableWidth();
 };

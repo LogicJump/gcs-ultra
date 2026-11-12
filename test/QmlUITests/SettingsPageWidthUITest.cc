@@ -1,5 +1,6 @@
 #include "SettingsPageWidthUITest.h"
 
+#include <QtCore/QList>
 #include <QtCore/QRegularExpression>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
@@ -89,5 +90,103 @@ void SettingsPageWidthUITest::_testPageFitsHerelinkWidth()
                            .arg(childRight - rightEdge)));
     }
 
+    stopUI();
+}
+
+void SettingsPageWidthUITest::_testGroupsUseAvailableWidth_data()
+{
+    QTest::addColumn<QString>("pageName");
+    QTest::addColumn<QString>("screenshotPrefix");
+
+    QTest::newRow("General") << QStringLiteral("General") << QStringLiteral("settings-general");
+    QTest::newRow("Maps") << QStringLiteral("Maps") << QStringLiteral("settings-maps");
+    QTest::newRow("Comm Links") << QStringLiteral("Comm Links") << QStringLiteral("settings-comm-links");
+}
+
+void SettingsPageWidthUITest::_testGroupsUseAvailableWidth()
+{
+    QFETCH(QString, pageName);
+    QFETCH(QString, screenshotPrefix);
+
+    startUI();
+    if (QTest::currentTestFailed()) {
+        return;
+    }
+
+    QVERIFY(clickToolSelectDropdownButton(QStringLiteral("toolbar_viewSettings")));
+    QQuickItem* const button = findVisibleItem(_rootItem, QStringLiteral("settingsButton_") + pageName);
+    QVERIFY(button);
+    scrollIntoView(button, QStringLiteral("settings_buttonList"));
+    const QPointF buttonCenter = button->mapToScene(QPointF(button->width() / 2, button->height() / 2));
+    QTest::mouseClick(_window, Qt::LeftButton, Qt::NoModifier, buttonCenter.toPoint());
+
+    QQuickItem* const layout = findVisibleItem(_rootItem, QStringLiteral("settingsPageLayout"));
+    QVERIFY(layout);
+    QQuickItem* const flickable = findVisibleItem(_rootItem, QStringLiteral("settingsPageFlickable"));
+    QVERIFY(flickable);
+
+    QList<QQuickItem*> groups;
+    for (QQuickItem* child : layout->childItems()) {
+        if (child->isVisible()) {
+            groups.append(child);
+        }
+    }
+    QVERIFY(groups.count() >= 2);
+    QQuickItem* const first = groups.at(0);
+    QQuickItem* const second = groups.at(1);
+
+    _window->resize(2440, 1200);
+    QTRY_VERIFY_WITH_TIMEOUT(second->x() >= first->x() + first->width(), TestTimeout::shortMs());
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(first->y()) <= kWidthTolerancePx, TestTimeout::shortMs());
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(second->y()) <= kWidthTolerancePx, TestTimeout::shortMs());
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(first->width() - second->width()) <= kWidthTolerancePx, TestTimeout::shortMs());
+    const qreal groupSpacing = layout->property("rowSpacing").toReal();
+    if (groups.count() >= 3) {
+        QQuickItem* const third = groups.at(2);
+        QTRY_COMPARE_WITH_TIMEOUT(third->x(), first->x(), TestTimeout::shortMs());
+        QTRY_VERIFY_WITH_TIMEOUT(qAbs(third->y() - first->height() - groupSpacing) <= kWidthTolerancePx,
+                                 TestTimeout::shortMs());
+    }
+    if (groups.count() >= 4) {
+        QQuickItem* const fourth = groups.at(3);
+        QTRY_COMPARE_WITH_TIMEOUT(fourth->x(), second->x(), TestTimeout::shortMs());
+        QTRY_VERIFY_WITH_TIMEOUT(qAbs(fourth->y() - second->height() - groupSpacing) <= kWidthTolerancePx,
+                                 TestTimeout::shortMs());
+    }
+    saveScreenshot(screenshotPrefix + QStringLiteral("-wide"));
+
+    _window->setMinimumWidth(0);
+    _window->setMinimumHeight(0);
+    _window->resize(kHerelinkWidth, kHerelinkHeight);
+    for (int index = 1; index < groups.count(); ++index) {
+        QQuickItem* const previous = groups.at(index - 1);
+        QQuickItem* const group = groups.at(index);
+        QTRY_COMPARE_WITH_TIMEOUT(group->x(), first->x(), TestTimeout::shortMs());
+        QTRY_VERIFY_WITH_TIMEOUT(
+            qAbs(group->y() - previous->y() - previous->height() - groupSpacing) <= kWidthTolerancePx,
+            TestTimeout::shortMs());
+    }
+    QTRY_VERIFY_WITH_TIMEOUT(
+        flickable->property("contentHeight").toReal() >= groups.last()->y() + groups.last()->height(),
+        TestTimeout::shortMs());
+    saveScreenshot(screenshotPrefix + QStringLiteral("-narrow"));
+
+    // A category/search filter keeps the existing group and gives it the full page width.
+    QQuickItem* const page = flickable->parentItem();
+    QVERIFY(page);
+    QQuickItem* const filteredGroup = groups.last();
+    const int sectionIndex = layout->childItems().indexOf(filteredGroup);
+    QVERIFY(page->setProperty("sectionFilter", sectionIndex));
+    _window->resize(2440, 1200);
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(filteredGroup->width() - layout->width()) <= kWidthTolerancePx,
+                             TestTimeout::shortMs());
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(filteredGroup->x()) <= kWidthTolerancePx, TestTimeout::shortMs());
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(filteredGroup->y()) <= kWidthTolerancePx, TestTimeout::shortMs());
+    for (QQuickItem* group : groups) {
+        if (group != filteredGroup) {
+            QTRY_VERIFY_WITH_TIMEOUT(!group->isVisible(), TestTimeout::shortMs());
+        }
+    }
+    saveScreenshot(screenshotPrefix + QStringLiteral("-section"));
     stopUI();
 }

@@ -278,7 +278,7 @@ void TerrainProfile::_addFlightPoints(FlightPathSegment* segment, double current
 
 void TerrainProfile::_addMissingPoints(FlightPathSegment* segment, double currentDistance, QList<QPointF>& points)
 {
-    if (_shouldAddMissingTerrainSegment(segment)) {
+    if (_shouldAddMissingTerrainSegment(segment) && std::isfinite(_minAMSLAlt)) {
         if (!points.isEmpty()) {
             points.append(QPointF(currentDistance * _horizontalScale, qQNaN()));
         }

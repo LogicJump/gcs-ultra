@@ -114,7 +114,7 @@ add_qgc_test(NTRIPSettingsUITest LABELS Integration NoSanitizer TIMEOUT 120)
 add_qgc_test(OnboardLogUITest LABELS Integration NoSanitizer TIMEOUT 180)
 add_qgc_test(ParameterDiffDialogUITest LABELS Integration NoSanitizer TIMEOUT 180)
 add_qgc_test(RemoteIDSettingsUITest LABELS Integration NoSanitizer TIMEOUT 120)
-add_qgc_test(SettingsPageWidthUITest LABELS Integration NoSanitizer TIMEOUT 180)
+add_qgc_test(SettingsPageWidthUITest LABELS Integration NoSanitizer TIMEOUT 180 SHARDS 2)
 add_qgc_test(CriticalVehicleMessageUITest LABELS Integration NoSanitizer TIMEOUT 180)
 
 # Qt Quick 3D requires an RHI backend, which the default software Quick backend

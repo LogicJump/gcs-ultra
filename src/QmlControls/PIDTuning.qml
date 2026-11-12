@@ -65,10 +65,10 @@ RowLayout {
         for (var i = 0; i < chart.seriesList.length; ++i) {
             chart.seriesList[i].clear()
         }
-        _xAxis.min = 0
+        _xAxis.min = -chartDisplaySec
         _xAxis.max = 0
-        _yAxis.min = 0
-        _yAxis.max = 0
+        _yAxis.min = -_tickSeparation
+        _yAxis.max = _tickSeparation
         _msecs = 0
         _last_t = 0
     }
@@ -141,11 +141,11 @@ RowLayout {
             var len = axis[_currentAxis].plot.length
             for (var i = 0; i < len; ++i) {
                 var value = axis[_currentAxis].plot[i].value
-                if (!isNaN(value)) {
+                if (isFinite(value)) {
                     chart.seriesList[i].append(_msecs/1000, value)
                     if (firstPoint) {
-                        _yAxis.min = value
-                        _yAxis.max = value
+                        _yAxis.min = value - _tickSeparation
+                        _yAxis.max = value + _tickSeparation
                     } else {
                         adjustYAxisMin(_yAxis, value)
                         adjustYAxisMax(_yAxis, value)
@@ -184,6 +184,7 @@ RowLayout {
 
         GraphsView {
             id:                     chart
+            objectName:             "pidTuning_chart"
             width:                  Math.max(_minChartWidth, availableWidth - rightPanel.width - parent.spacing - _margins)
             height:                 Math.max(_minChartHeight, availableHeight - leftPanelBottomColumn.height - chartTitleLabel.height - legendRow.height - parent.spacing * 3 - _margins)
 
@@ -202,7 +203,7 @@ RowLayout {
 
             axisX: ValueAxis {
                 id:                     xAxis
-                min:                    0
+                min:                    -chartDisplaySec
                 max:                    0
                 labelFormat:            "%.1f"
                 titleText:              ScreenTools.isShortScreen ? "" : qsTr("sec")

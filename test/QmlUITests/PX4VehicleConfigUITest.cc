@@ -1,14 +1,15 @@
 #include "PX4VehicleConfigUITest.h"
 
+#include <cmath>
+
+#include <QtCore/QPointer>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
 #include <QtTest/QSignalSpy>
 #include <QtTest/QTest>
 
-#include "MockLink.h"
-
-#include <QtCore/QPointer>
 #include "Fact.h"
+#include "MockLink.h"
 #include "ParameterManager.h"
 #include "Vehicle.h"
 #include "VehicleComponent.h"
@@ -19,58 +20,65 @@ void PX4VehicleConfigUITest::_testNavigateVehicleConfig()
 {
     runWithMockLink(
         [] { return MockLink::startPX4MockLink(); },
-        [&](QPointer<MockLink> /*mockLink*/, Vehicle *vehicle) {
-    navigateToConfigureView();
-    if (QTest::currentTestFailed()) return;
+        [&](QPointer<MockLink> /*mockLink*/, Vehicle* vehicle) {
+            const std::optional<bool> rhiBased = expectSoftwareBackendWarnings(/*strict*/ false);
+            QVERIFY2(rhiBased.has_value(), "No renderer interface on the main window");
 
-    // -------------------------------------------------------------------------
-    // Click Overview
-    // -------------------------------------------------------------------------
-    QVERIFY2(clickButton(QStringLiteral("vehicleConfig_summary")), "Failed to click Overview button");
-    QTest::qWait(_viewDelay);
+            navigateToConfigureView();
+            if (QTest::currentTestFailed())
+                return;
 
-    // The Overview page lists what the vehicle still needs and shows the values of the components that have values to show
-    for (const QString& itemName :
-         {QStringLiteral("vehicleSummary_tile_Airframe"), QStringLiteral("vehicleSummary_tile_Sensors"),
-          QStringLiteral("vehicleSummary_card_Airframe"), QStringLiteral("vehicleSummary_card_Flight Modes")}) {
-        QQuickItem* const item = findItem(_rootItem, itemName);
-        QVERIFY2(item, qPrintable(itemName));
-        QVERIFY2(item->isVisible(), qPrintable(itemName));
-    }
+            // -------------------------------------------------------------------------
+            // Click Overview
+            // -------------------------------------------------------------------------
+            QVERIFY2(clickButton(QStringLiteral("vehicleConfig_summary")), "Failed to click Overview button");
+            QTest::qWait(_viewDelay);
 
-    // Each control on the Overview page opens its component's setup page
-    const auto openedComponentName = [this]() {
-        QQuickItem* const panelLoader = findItem(_rootItem, QStringLiteral("vehicleConfig_panelLoader"));
-        const auto* const component =
-            panelLoader ? panelLoader->property("vehicleComponent").value<VehicleComponent*>() : nullptr;
-        return component ? component->name() : QString();
-    };
-    const auto clickFromOverview = [&](const QString& controlName, const QString& expectedComponent) {
-        QVERIFY2(clickButton(QStringLiteral("vehicleConfig_summary")), "Failed to click Overview button");
-        QVERIFY2(clickButton(controlName), qPrintable(controlName));
-        QTRY_COMPARE_WITH_TIMEOUT(openedComponentName(), expectedComponent, TestTimeout::shortMs());
-    };
-    clickFromOverview(QStringLiteral("vehicleSummary_tile_Sensors"), QStringLiteral("Sensors"));
-    if (QTest::currentTestFailed()) return;
-    clickFromOverview(QStringLiteral("vehicleSummary_card_Airframe"), QStringLiteral("Airframe"));
-    if (QTest::currentTestFailed()) return;
+            // The Overview page lists what the vehicle still needs and shows the values of the components that have
+            // values to show
+            for (const QString& itemName :
+                 {QStringLiteral("vehicleSummary_tile_Airframe"), QStringLiteral("vehicleSummary_tile_Sensors"),
+                  QStringLiteral("vehicleSummary_card_Airframe"), QStringLiteral("vehicleSummary_card_Flight Modes")}) {
+                QQuickItem* const item = findItem(_rootItem, itemName);
+                QVERIFY2(item, qPrintable(itemName));
+                QVERIFY2(item->isVisible(), qPrintable(itemName));
+            }
 
-    // An unset battery makes Battery the next component to set up
-    Fact* const cellCount = vehicle->parameterManager()->getParameter(ParameterManager::defaultComponentId,
-                                                                      QStringLiteral("BAT1_N_CELLS"));
-    QSignalSpy ackSpy(cellCount, &Fact::vehicleUpdated);
-    QVERIFY(ackSpy.isValid());
-    cellCount->setRawValue(0);
-    QVERIFY(ackSpy.wait(TestTimeout::mediumMs()));
-    clickFromOverview(QStringLiteral("vehicleSummary_continueSetup"), QStringLiteral("Battery"));
-    if (QTest::currentTestFailed()) return;
+            // Each control on the Overview page opens its component's setup page
+            const auto openedComponentName = [this]() {
+                QQuickItem* const panelLoader = findItem(_rootItem, QStringLiteral("vehicleConfig_panelLoader"));
+                const auto* const component =
+                    panelLoader ? panelLoader->property("vehicleComponent").value<VehicleComponent*>() : nullptr;
+                return component ? component->name() : QString();
+            };
+            const auto clickFromOverview = [&](const QString& controlName, const QString& expectedComponent) {
+                QVERIFY2(clickButton(QStringLiteral("vehicleConfig_summary")), "Failed to click Overview button");
+                QVERIFY2(clickButton(controlName), qPrintable(controlName));
+                QTRY_COMPARE_WITH_TIMEOUT(openedComponentName(), expectedComponent, TestTimeout::shortMs());
+            };
+            clickFromOverview(QStringLiteral("vehicleSummary_tile_Sensors"), QStringLiteral("Sensors"));
+            if (QTest::currentTestFailed())
+                return;
+            clickFromOverview(QStringLiteral("vehicleSummary_card_Airframe"), QStringLiteral("Airframe"));
+            if (QTest::currentTestFailed())
+                return;
 
-    // -------------------------------------------------------------------------
-    // Click through each vehicle component, in English and Chinese
-    // -------------------------------------------------------------------------
-    clickThroughAllComponentsAllLocales(vehicle);
+            // An unset battery makes Battery the next component to set up
+            Fact* const cellCount = vehicle->parameterManager()->getParameter(ParameterManager::defaultComponentId,
+                                                                              QStringLiteral("BAT1_N_CELLS"));
+            QSignalSpy ackSpy(cellCount, &Fact::vehicleUpdated);
+            QVERIFY(ackSpy.isValid());
+            cellCount->setRawValue(0);
+            QVERIFY(ackSpy.wait(TestTimeout::mediumMs()));
+            clickFromOverview(QStringLiteral("vehicleSummary_continueSetup"), QStringLiteral("Battery"));
+            if (QTest::currentTestFailed())
+                return;
 
-    });
+            // -------------------------------------------------------------------------
+            // Click through each vehicle component, in English and Chinese
+            // -------------------------------------------------------------------------
+            clickThroughAllComponentsAllLocales(vehicle);
+        });
 }
 
 // With a full-parameter vehicle both dividers show; searching flattens the sidebar and hides them.
@@ -148,7 +156,18 @@ void PX4VehicleConfigUITest::_cycleAxisButtons(const QStringList &axisNames)
                  qPrintable(QStringLiteral("Axis button not found: %1").arg(objectName)));
         QVERIFY2(clickButton(objectName),
                  qPrintable(QStringLiteral("Failed to click axis button: %1").arg(objectName)));
-        QTest::qWait(_pageDelay > 0 ? _pageDelay : 200); // let the polish pass run
+        QTest::qWait(_pageDelay > 0 ? _pageDelay : 200);  // let the polish pass run
+        QQuickItem* const chart = findVisibleItem(_rootItem, QStringLiteral("pidTuning_chart"), 0);
+        QVERIFY(chart);
+        for (const char* axisName : {"axisX", "axisY"}) {
+            QObject* const axis = chart->property(axisName).value<QObject*>();
+            QVERIFY(axis);
+            const double minimum = axis->property("min").toDouble();
+            const double maximum = axis->property("max").toDouble();
+            QVERIFY2(
+                std::isfinite(minimum) && std::isfinite(maximum) && minimum < maximum,
+                qPrintable(QStringLiteral("%1 range is invalid: [%2, %3]").arg(axisName).arg(minimum).arg(maximum)));
+        }
     }
 }
 
