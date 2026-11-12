@@ -140,6 +140,8 @@ void PX4SensorsCalibrationUITest::_verifySensorsSetupStates(const SensorsSetupSt
 
 void PX4SensorsCalibrationUITest::_openSensorsPage(Vehicle* vehicle)
 {
+    vehicle->parameterManager()->setParamValueAckTimeoutForTest(ParameterManager::kWaitForParamValueAckMs);
+
     resetParamsToFirmwareDefaults(vehicle, QStringLiteral("CAL_MAG0_ID"));
     if (QTest::currentTestFailed()) return;
 
@@ -194,7 +196,7 @@ void PX4SensorsCalibrationUITest::_testMagCalibration()
             }
 
             QQuickItem* panel = findVisibleItem(_rootItem, QStringLiteral("sensors_calibrationPanel"), 2000);
-            QObject* controller = panelController(panel);
+            SensorsComponentController* controller = panelController(panel);
             QVERIFY2(controller, "Calibration panel not visible during calibration");
             const auto progress = [&] { return controller->property("calibrationProgress").toDouble(); };
             QVERIFY2(qFuzzyIsNull(progress()), "Progress not at 0 at calibration start");
@@ -206,6 +208,8 @@ void PX4SensorsCalibrationUITest::_testMagCalibration()
             QQuickItem* cancelButton =
                 findVisibleItem(_rootItem, QStringLiteral("sensorsSetup_cancelCalibration"), 2000);
             QVERIFY2(cancelButton, "Cancel button not visible during calibration");
+            QQuickItem* stage = findVisibleItem(_rootItem, QStringLiteral("sensorsCal_stage"), 2000);
+            QVERIFY2(stage, "Calibration stage not visible during calibration");
 
             // ---------------------------------------------------------------------
             // Place the vehicle into each pose and watch the UI track the side
@@ -218,16 +222,26 @@ void PX4SensorsCalibrationUITest::_testMagCalibration()
                 QQuickItem* side = findVisibleItem(_rootItem, sideName);
                 QVERIFY2(side, qPrintable(QStringLiteral("Pose indicator disappeared: %1").arg(sideName)));
 
-                mockLink->setCalibrationPose(info.pose);
-
                 // Orientation detected: the side goes InProgress with the rotate animation
-                QVERIFY2(waitForCalState(side, SensorsComponentController::SideCalStateInProgress, 5000),
+                bool inProgressObserved = false;
+                bool stageRotating = false;
+                const QMetaObject::Connection stateConnection =
+                    connect(controller, &SensorsComponentController::orientationCalSidesStateChanged, side, [&] {
+                        if (side->property("calState").toInt() != SensorsComponentController::SideCalStateInProgress) {
+                            return;
+                        }
+                        inProgressObserved = true;
+                        stageRotating = stage->property("side").toString() == QLatin1String(info.sideId) &&
+                                        stage->property("rotating").toBool() &&
+                                        stage->property("instruction").toString() == QLatin1String("Rotate");
+                    });
+                mockLink->setCalibrationPose(info.pose);
+                const bool reachedInProgress = QTest::qWaitFor([&] { return inProgressObserved; }, 5000);
+                disconnect(stateConnection);
+                QVERIFY2(reachedInProgress,
                          qPrintable(QStringLiteral("Side never went in-progress: %1").arg(sideName)));
-                QQuickItem* stage = findVisibleItem(_rootItem, QStringLiteral("sensorsCal_stage"));
                 QVERIFY2(
-                    stage && stage->property("side").toString() == QLatin1String(info.sideId) &&
-                        stage->property("rotating").toBool() &&
-                        stage->property("instruction").toString() == QLatin1String("Rotate"),
+                    stageRotating,
                     qPrintable(QStringLiteral("The stage does not show the vehicle rotating on %1").arg(sideName)));
 
                 // Side completes and marks itself done
@@ -630,6 +644,10 @@ void PX4SensorsCalibrationUITest::_testInlineCalibration()
             QCOMPARE(retry->property("text").toString(), QStringLiteral("Retry"));
             QVERIFY2(retry->property("enabled").toBool(), "Retry is not enabled");
 
+            waitForParamRefreshQuiet(vehicle);
+            if (QTest::currentTestFailed())
+                return;
+
             // Retrying succeeds once the vehicle can calibrate
             Fact* result = params->getParameter(ParameterManager::defaultComponentId, resultParam);
             QVERIFY(result);
@@ -787,9 +805,23 @@ void PX4SensorsCalibrationUITest::_testOrientationCalibrationFailure()
                         const PoseInfo& info = kPoses[0];
                         QQuickItem* side = findVisibleItem(_rootItem, QLatin1String(info.objectName), 5000);
                         QVERIFY2(side, "Pose indicator not visible after calibration start");
+                        QQuickItem* panel =
+                            findVisibleItem(_rootItem, QStringLiteral("sensors_calibrationPanel"), 2000);
+                        SensorsComponentController* controller = panelController(panel);
+                        QVERIFY2(controller, "Calibration panel not visible during calibration");
+
+                        bool inProgressObserved = false;
+                        const QMetaObject::Connection stateConnection = connect(
+                            controller, &SensorsComponentController::orientationCalSidesStateChanged, side, [&] {
+                                if (side->property("calState").toInt() ==
+                                    SensorsComponentController::SideCalStateInProgress) {
+                                    inProgressObserved = true;
+                                }
+                            });
                         mockLink->setCalibrationPose(info.pose);
-                        QVERIFY2(waitForCalState(side, SensorsComponentController::SideCalStateInProgress, 5000),
-                                 "Side never went in-progress");
+                        const bool reachedInProgress = QTest::qWaitFor([&] { return inProgressObserved; }, 5000);
+                        disconnect(stateConnection);
+                        QVERIFY2(reachedInProgress, "Side never went in-progress");
 
                         // The firmware reports the failure and stops, so a new request is accepted
                         QVERIFY2(mockLink->failCalibration(), "No calibration was running");
@@ -890,6 +922,11 @@ void PX4SensorsCalibrationUITest::_testLargeVehicleCalibration()
             QVERIFY2(QTest::qWaitFor([&] { return calibrate->property("enabled").toBool(); }, 5000),
                      "Calibrate is not available after the timeout");
             QVERIFY2(orientationRow->property("enabled").toBool(), "The orientation stays locked after the timeout");
+
+            waitForParamRefreshQuiet(vehicle);
+            if (QTest::currentTestFailed())
+                return;
+
             QVERIFY2(clickButtonScrolled(QStringLiteral("sensorsCal_largeVehicleCalibrate"),
                                          QStringLiteral("setupPage_flickable")),
                      "Failed to click Calibrate again");

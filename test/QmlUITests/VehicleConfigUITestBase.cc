@@ -2,7 +2,6 @@
 
 #include <functional>
 
-#include <QtCore/QElapsedTimer>
 #include <QtCore/QLocale>
 #include <QtCore/QPointer>
 #include <QtCore/QRegularExpression>
@@ -13,10 +12,12 @@
 
 #include "AppSettings.h"
 #include "AutoPilotPlugin.h"
+#include "BulkRefreshJob.h"
 #include "Fact.h"
 #include "MultiVehicleManager.h"
 #include "ParameterManager.h"
 #include "QGCApplication.h"
+#include "QGCStateMachine.h"
 #include "SettingsManager.h"
 #include "Vehicle.h"
 #include "VehicleComponent.h"
@@ -299,17 +300,25 @@ QString VehicleConfigUITestBase::languageAnchorObjectName() const
 void VehicleConfigUITestBase::waitForParamRefreshQuiet(Vehicle *vehicle)
 {
     ParameterManager *mgr = vehicle->parameterManager();
-    QElapsedTimer sinceLastResponse;
-    sinceLastResponse.start();
-
-    QObject context;
-    QObject::connect(mgr, &ParameterManager::_paramRequestReadSuccess, &context,
-                     [&] { sinceLastResponse.restart(); });
-    QObject::connect(mgr, &ParameterManager::_paramRequestReadFailure, &context,
-                     [&] { sinceLastResponse.restart(); });
-
-    QVERIFY2(QTest::qWaitFor([&] { return sinceLastResponse.elapsed() > 500; }, 10000),
-             "waitForParamRefreshQuiet: parameter refresh traffic still active after 10s");
+    QVERIFY2(QTest::qWaitFor(
+                 [&] {
+                     if (!mgr->findChildren<BulkRefreshJob*>(Qt::FindDirectChildrenOnly).isEmpty()) {
+                         return false;
+                     }
+                     const QList<QGCStateMachine*> stateMachines =
+                         mgr->findChildren<QGCStateMachine*>(Qt::FindDirectChildrenOnly);
+                     for (const QGCStateMachine* stateMachine : stateMachines) {
+                         const QString name = stateMachine->objectName();
+                         if ((name == QStringLiteral("PARAM_REQUEST_READ") ||
+                              name == QStringLiteral("ParameterManager PARAM_SET")) &&
+                             stateMachine->inProgress()) {
+                             return false;
+                         }
+                     }
+                     return true;
+                 },
+                 10000),
+             "waitForParamRefreshQuiet: bulk parameter refresh still active after 10s");
 }
 
 void VehicleConfigUITestBase::navigateToAPMSensorsPage()

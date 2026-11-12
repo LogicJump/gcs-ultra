@@ -59,9 +59,8 @@ protected:
     /// the loader has an item. Catches blank-page regressions.
     void verifyPanelContentVisible(const QString &context);
 
-    /// Wait for _refreshParams() traffic to settle so link teardown doesn't cut
-    /// off in-flight PARAM_REQUEST_READs (which can log warnings that fail
-    /// strict mode). Fails the test if traffic is still active after 10s;
+    /// Wait for _refreshParams() jobs to finish so another calibration or link teardown doesn't overlap
+    /// in-flight PARAM_REQUEST_READs. Fails the test if a job is still active after 10s;
     /// callers must check QTest::currentTestFailed() after calling.
     void waitForParamRefreshQuiet(Vehicle *vehicle);
 

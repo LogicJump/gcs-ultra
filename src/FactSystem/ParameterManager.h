@@ -108,6 +108,10 @@ public:
     /// UI tests to exercise the app-close "pending parameter updates" warning
     /// without driving the racy real PARAM_SET state machine.
     void setPendingWritesForTest(bool pending);
+
+    /// Test-only: override the PARAM_REQUEST_READ acknowledgement timeout for fixtures that exercise production-sized
+    /// request batches. The default unit-test timeout remains unchanged.
+    void setParamValueAckTimeoutForTest(int timeoutMs);
 #endif
 
     Vehicle *vehicle();
@@ -249,7 +253,7 @@ private:
     int _initialRequestRetryCount = 0;                          ///< Current retry count for request list
     static constexpr int _maxInitialLoadRetrySingleParam = kMaxInitialLoadRetrySingleParam;
     bool _disableAllRetries = false;                            ///< true: Don't retry any requests (used for testing and logReplay)
-    const int _waitForParamValueAckMs;                          ///< 50 ms in unit tests, kWaitForParamValueAckMs otherwise
+    int _waitForParamValueAckMs;            ///< 50 ms in unit tests, kWaitForParamValueAckMs otherwise
 
     bool _indexBatchQueueActive = false;    ///< true: we are actively batching re-requests for missing index base params, false: index based re-request has not yet started
     QList<QPair<int, int>> _indexBatchQueue;    ///< In-flight index re-requests: (component id, parameter index)

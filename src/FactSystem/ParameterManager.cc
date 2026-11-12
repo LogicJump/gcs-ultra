@@ -1734,6 +1734,16 @@ void ParameterManager::setPendingWritesForTest(bool pending)
         emit pendingWritesChanged(pending);
     }
 }
+
+void ParameterManager::setParamValueAckTimeoutForTest(int timeoutMs)
+{
+    if (timeoutMs <= 0) {
+        qCWarning(ParameterManagerLog) << "Rejecting non-positive parameter acknowledgement timeout:" << timeoutMs;
+        return;
+    }
+
+    _waitForParamValueAckMs = timeoutMs;
+}
 #endif
 
 Vehicle *ParameterManager::vehicle()
