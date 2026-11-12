@@ -39,7 +39,7 @@ QGCListView {
             Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 1.5
             Layout.preferredHeight: Layout.preferredWidth
             radius:                 width / 2
-            color:                  row.selected ? qgcPal.accent : "transparent"
+            color:                  row.selected ? qgcPal.selectionFill : "transparent"
             border.width:           2
             border.color:           row.selected ? qgcPal.accent : qgcPal.textPrimary
 

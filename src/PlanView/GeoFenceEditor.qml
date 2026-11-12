@@ -11,14 +11,14 @@ Rectangle {
     id:     geoFenceEditorRect
     height: geoFenceItems.y + geoFenceItems.height + (_margin * 2)
     radius: _radius
-    color:  qgcPal.accent
+    color:  qgcPal.windowCard
 
     property var    myGeoFenceController
     property var    flightMap
 
     readonly property real  _editFieldWidth:    Math.min(width - _margin * 2, ScreenTools.defaultFontPixelWidth * 15)
     readonly property real  _margin:            ScreenTools.defaultFontPixelWidth / 2
-    readonly property real  _radius:            ScreenTools.defaultFontPixelWidth / 2
+    readonly property real  _radius:            ScreenTools.defaultBorderRadius
 
     QGCLabel {
         id:                 geoFenceLabel

@@ -20,7 +20,7 @@ Rectangle {
 
     id:             _root
     height:         _currentItem ? (editorLoader.y + editorLoader.height + _innerMargin) : (topRowLayout.y + topRowLayout.height + _margin)
-    color:          _currentItem ? qgcPal.accent : qgcPal.windowCard
+    color:          _currentItem ? qgcPal.selectionFill : qgcPal.windowCard
     radius:         _radius
     opacity:        _currentItem ? 1.0 : 0.7
     border.width:   _readyForSave ? 0 : 2
@@ -38,7 +38,7 @@ Rectangle {
     readonly property real  _editFieldWidth:    Math.min(width - _innerMargin * 2, ScreenTools.defaultFontPixelWidth * 12)
     readonly property real  _margin:            ScreenTools.defaultFontPixelWidth / 2
     readonly property real  _innerMargin:       2
-    readonly property real  _radius:            ScreenTools.defaultFontPixelWidth / 2
+    readonly property real  _radius:            ScreenTools.defaultBorderRadius
     readonly property real  _hamburgerSize:     commandPicker.height * 0.75
     readonly property real  _trashSize:         commandPicker.height * 0.75
     readonly property bool  _waypointsOnlyMode: QGroundControl.corePlugin.options.missionWaypointsOnly

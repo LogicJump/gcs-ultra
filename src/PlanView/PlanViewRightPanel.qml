@@ -17,8 +17,16 @@ Item {
     property real _toolsMargin:       ScreenTools.defaultFontPixelWidth * 0.75
 
     property bool useNewPlanPanel: QGroundControl.settingsManager.planViewSettings.useNewPlanPanel.rawValue
+    property Item listHost: null
 
     readonly property bool _useNewPlanPanel: useNewPlanPanel
+
+    onListHostChanged: {
+        if (listHost && parent) {
+            anchors.left = undefined
+            anchors.right = parent.right
+        }
+    }
 
     function selectNextNotReady() {
         for (var i = 0; i < _missionController.visualItems.count; i++) {
@@ -51,6 +59,7 @@ Item {
         width:                  toggleButtonRect.width - toggleButtonRect.radius * (root._useNewPlanPanel ? 2 : 1)
         height:                 toggleButtonRect.height
         clip:                   true
+        visible:                root.listHost === null
 
         property bool _expanded: root.anchors.right == root.parent.right
 
@@ -76,6 +85,7 @@ Item {
         }
 
         QGCMouseArea {
+            objectName: "planView_panelToggle"
             anchors.fill: parent
 
             onClicked: {
@@ -122,6 +132,7 @@ Item {
             sourceComponent: PlanPanel {
                 editorMap:              root.editorMap
                 planMasterController:   root.planMasterController
+                listHost:               root.listHost
                 onEditingLayerChangeRequested: (layer) => root.editingLayerChangeRequested(layer)
             }
         }

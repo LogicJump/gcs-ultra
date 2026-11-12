@@ -135,4 +135,4 @@ add_qgc_test(FlyViewOccluderUITest LABELS Integration NoSanitizer TIMEOUT 120 ${
 # Runs rows on the GeoMap Plan map, so it needs the same RHI environment
 add_qgc_test(PlanViewUITest LABELS Integration NoSanitizer TIMEOUT 180 ${_viewer3d_env_mod})
 # StockUI: asserts stock UI elements that custom builds intentionally replace/omit
-add_qgc_test(PlanPanelUITest LABELS Integration NoSanitizer StockUI TIMEOUT 180 ${_viewer3d_env_mod})
+add_qgc_test(PlanPanelUITest LABELS Integration NoSanitizer StockUI TIMEOUT 240 SHARDS 6 ${_viewer3d_env_mod})

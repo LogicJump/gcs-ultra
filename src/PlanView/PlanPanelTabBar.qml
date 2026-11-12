@@ -1,21 +1,23 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 
 import QGroundControl
 import QGroundControl.Controls
 
-/// Column of tab pills, styled like QGCGroupBox header buttons. Pills show vertical text when there is room and icons
-/// otherwise. The right side of each pill is padding meant to sit under the panel it is attached to.
-Column {
+/// Layer tabs run across a docked object list, or down the side of the compact panel.
+/// Compact tabs show vertical text when there is room and icons otherwise.
+GridLayout {
     id: root
 
     property var    model:          []  ///< Entries from PlanPanelLogic.tabModel()
     property string currentTab
     property string style:          "icon"  ///< "text" or "icon"
+    property bool horizontal: false
 
     signal tabClicked(string tab)
 
-    readonly property bool _textStyle: style === "text"
+    readonly property bool _textStyle: horizontal || style === "text"
     readonly property var _icons: ({
         "plan":     "/qmlimages/Plan.svg",
         "mission":  "/res/waypoint.svg",
@@ -29,7 +31,9 @@ Column {
         "rally":    qsTr("Rally")
     })
 
-    spacing: ScreenTools.defaultFontPixelWidth / 2
+    columns: horizontal ? model.length : 1
+    rowSpacing: ScreenTools.defaultFontPixelWidth / 2
+    columnSpacing: 0
 
     Repeater {
         model: root.model
@@ -44,8 +48,11 @@ Column {
             objectName:     "planPanel_tab_" + modelData.id
             text:           root._labels[modelData.id]
             enabled:        modelData.enabled
-            implicitWidth:  ScreenTools.defaultFontPixelHeight * 2.2
-            implicitHeight: root._textStyle ? ScreenTools.defaultFontPixelHeight * 1.5 + tabText.implicitWidth : ScreenTools.defaultFontPixelHeight * 2.6
+            Layout.fillWidth: root.horizontal
+            implicitWidth:  root.horizontal ? tabText.implicitWidth + ScreenTools.defaultFontPixelWidth * 2
+                                            : ScreenTools.defaultFontPixelHeight * 2.2
+            implicitHeight: root.horizontal ? ScreenTools.defaultFontPixelHeight * 2.4
+                                             : root._textStyle ? ScreenTools.defaultFontPixelHeight * 1.5 + tabText.implicitWidth : ScreenTools.defaultFontPixelHeight * 2.6
             rightPadding:   ScreenTools.defaultBorderRadius * 2
             hoverEnabled:   !ScreenTools.isMobile
             focusPolicy:    Qt.ClickFocus
@@ -78,7 +85,7 @@ Column {
                 QGCLabel {
                     id:                 tabText
                     anchors.centerIn:   parent
-                    rotation:           -90
+                    rotation:           root.horizontal ? 0 : -90
                     visible:            root._textStyle
                     text:               pill.text
                     color:              pillPal.textPrimary

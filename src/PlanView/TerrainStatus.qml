@@ -19,9 +19,9 @@ Rectangle {
     property var  _visualItems:             missionController.visualItems
     property real _altRange:                _maxAMSLAltitude - _minAMSLAltitude
     property real _indicatorSpacing:        5
-    property real _minAMSLAltitude:         isNaN(terrainProfile.minAMSLAlt) ? 0 : terrainProfile.minAMSLAlt
-    property real _maxAMSLAltitude:         isNaN(terrainProfile.maxAMSLAlt) ? 100 : terrainProfile.maxAMSLAlt
-    property real _missionTotalDistance:    isNaN(missionController.missionTotalDistance) ? 100 : missionController.missionTotalDistance
+    property real _minAMSLAltitude:         isFinite(terrainProfile.minAMSLAlt) ? terrainProfile.minAMSLAlt : 0
+    property real _maxAMSLAltitude:         isFinite(terrainProfile.maxAMSLAlt) ? terrainProfile.maxAMSLAlt : 100
+    property real _missionTotalDistance:    isFinite(missionController.missionTotalDistance) ? missionController.missionTotalDistance : 100
     property var  _unitsConversion:         QGroundControl.unitsConversion
 
     QGCPalette { id: qgcPal }
@@ -52,6 +52,7 @@ Rectangle {
 
             GraphsView {
                 id:                 chart
+                objectName:         "planTerrain_graph"
                 anchors.fill:       parent
                 marginTop:          ScreenTools.defaultFontPixelHeight / 2  // Fixes top clipping problem
                 marginRight:        ScreenTools.defaultFontPixelWidth * 2   // Prevents clipping last tick mark
@@ -228,7 +229,7 @@ Rectangle {
     }
 
     function _axisXMax() {
-        return _unitsConversion.metersToAppSettingsHorizontalDistanceUnits(_missionTotalDistance)
+        return _unitsConversion.metersToAppSettingsHorizontalDistanceUnits(Math.max(1, _missionTotalDistance))
     }
 
     function _axisYMin() {
@@ -236,7 +237,7 @@ Rectangle {
     }
 
     function _axisYMax() {
-        return _unitsConversion.metersToAppSettingsVerticalDistanceUnits(_maxAMSLAltitude)
+        return _unitsConversion.metersToAppSettingsVerticalDistanceUnits(Math.max(_minAMSLAltitude + 1, _maxAMSLAltitude))
     }
 
     Connections {

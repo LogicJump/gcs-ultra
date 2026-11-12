@@ -13,6 +13,7 @@ ColumnLayout {
     required property var planMasterController
     required property var editorMap
     property int incompleteCount: 0
+    property Item listHost: null
 
     signal planTabRequested
 
@@ -80,6 +81,7 @@ ColumnLayout {
         hasSelection:       root._hasSelection
         listComponent:      missionListComponent
         inspectorComponent: missionInspectorComponent
+        listHost:           root.listHost
     }
 
     Component {

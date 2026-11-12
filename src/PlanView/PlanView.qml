@@ -20,7 +20,12 @@ Item {
     readonly property int   _decimalPlaces: 8
     readonly property real  _margin: ScreenTools.defaultFontPixelHeight * 0.5
     readonly property real  _toolsMargin: ScreenTools.defaultFontPixelWidth * 0.75
-    readonly property real  _rightPanelWidth: Math.min(width / 3, ScreenTools.defaultFontPixelWidth * 30)
+    readonly property real  _rightPanelWidth: Math.min(width * 0.55, ScreenTools.defaultFontPixelWidth * 48)
+    readonly property bool  _wideLayout: _useNewPlanPanel && width >= ScreenTools.defaultFontPixelWidth * 160
+    readonly property bool  _compactObjectList: _wideLayout
+                                               && _centerViewportBottom >= ScreenTools.defaultFontPixelHeight * 20
+                                               && (!_visualItems || _visualItems.count <= 1)
+                                               && (_editingLayer === _layerPlan || _editingLayer === _layerMission)
 
     property var    _planMasterController: planMasterController
     property var    _missionController: _planMasterController.missionController
@@ -43,10 +48,20 @@ Item {
     // The map is created by editorMapLoader: QtLocation FlightMap or, when enabled, the experimental GeoMap engine
     readonly property var   editorMap: editorMapLoader.item
     readonly property real  _nonInteractiveOpacity: 0.5
-    readonly property real  _leftToolWidth: toolStrip.x + toolStrip.width
+    readonly property real  _toolStripRight: toolStrip.visible ? toolStrip.x + toolStrip.width : 0
+    readonly property real  _leftToolWidth: _wideLayout ? objectListDock.x + objectListDock.width
+                                                     : _toolStripRight
     readonly property real  _rightToolWidth: rightPanel.width + rightPanel.anchors.rightMargin
+    readonly property real  _centerViewportLeft: _compactObjectList ? _toolStripRight : _leftToolWidth
+    readonly property real  _centerViewportTop: _compactObjectList ? objectListDock.y + objectListDock.height + _margin
+                                                                  : _margin
+    readonly property real  _centerViewportBottom: missionStatus.visible ? missionStatus.y
+                                                                        : mainPlanViewArea.height - _margin
     // This is the center rectangle of the map which is not obscured by tools
-    readonly property rect  _centerViewport: Qt.rect(_leftToolWidth + _margin, _margin, mainPlanViewArea.width - _leftToolWidth - _rightToolWidth - (_margin * 2), (missionStatus.visible ? missionStatus.y : mainPlanViewArea.height - _margin) - _margin)
+    readonly property rect  _centerViewport: Qt.rect(_centerViewportLeft + _margin, _centerViewportTop,
+                                                   mainPlanViewArea.width - _centerViewportLeft
+                                                       - _rightToolWidth - _margin * 2,
+                                                   Math.max(0, _centerViewportBottom - _centerViewportTop))
 
     readonly property int _layerMission: PlanEditLayers.layerMission
     readonly property int _layerPlan: PlanEditLayers.layerPlan
@@ -531,14 +546,24 @@ Item {
         // Left tool strip
         ToolStrip {
             id: toolStrip
+            objectName: "planView_toolStrip"
             anchors.margins: _toolsMargin
             anchors.left: parent.left
             anchors.top: parent.top
             z: QGroundControl.zOrderWidgets
             maxHeight: parent.height - toolStrip.y
-            visible: _editingLayer == _layerMission
+            visible: _isMissionLayer && _hasVisibleActions
 
             property bool _isMissionLayer: _editingLayer == _layerMission
+            readonly property bool _hasVisibleActions: {
+                const actions = toolStripActionList.model
+                for (let index = 0; index < actions.length; index++) {
+                    if (actions[index].visible) {
+                        return true
+                    }
+                }
+                return false
+            }
 
             Binding {
                 target: waypointButton
@@ -640,15 +665,42 @@ Item {
         // The GeoMap engine shows its own scale next to its camera controls
         MapScale {
             anchors.margins: _toolsMargin
-            anchors.left: toolStrip.right
+            anchors.left: parent.left
+            anchors.leftMargin: (_root._wideLayout ? objectListDock.x + objectListDock.width
+                                                   : _root._toolStripRight) + _toolsMargin
             anchors.top: parent.top
             mapControl: _root.editorMap
             autoHide: true
             visible: !_root._useGeoMapEngine
         }
 
+        Rectangle {
+            id: objectListDock
+            objectName: "planView_objectListDock"
+            anchors.left: parent.left
+            anchors.leftMargin: _root._toolStripRight + _toolsMargin
+            anchors.top: parent.top
+            width: ScreenTools.defaultFontPixelWidth * 32
+            height: _root._compactObjectList ? Math.min(parent.height, ScreenTools.defaultFontPixelHeight * 12)
+                                            : parent.height
+            color: QGroundControl.globalPalette.windowPanel
+            visible: _root._wideLayout
+
+            DeadMouseArea {
+                anchors.fill: parent
+            }
+
+            Item {
+                id: objectListHost
+                anchors.fill: parent
+                anchors.topMargin: ScreenTools.defaultFontPixelHeight * 2.8
+                anchors.margins: ScreenTools.defaultFontPixelWidth * 0.5
+            }
+        }
+
         PlanViewRightPanel {
             id: rightPanel
+            z: QGroundControl.zOrderWidgets
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             anchors.right: parent.right
@@ -656,6 +708,7 @@ Item {
             planMasterController: _planMasterController
             editorMap: _root.editorMap
             useNewPlanPanel: _root._useNewPlanPanel
+            listHost: _root._wideLayout ? objectListHost : null
             onEditingLayerChangeRequested: (layer) => _editingLayer = layer
         }
 
@@ -710,7 +763,7 @@ Item {
                     width:  layerSwitcher._layerButtonSize
                     height: width
                     radius: ScreenTools.defaultBorderRadius
-                    color:  QGroundControl.globalPalette.accent
+                    color:  QGroundControl.globalPalette.selectionFill
 
                     QGCColoredImage {
                         anchors.centerIn:   parent
@@ -787,6 +840,12 @@ Item {
             }
 
             function _calcLeftAnchor() {
+                if (_root._wideLayout) {
+                    return objectListDock.right
+                }
+                if (!toolStrip.visible) {
+                    return parent.left
+                }
                 let bottomOfToolStrip = toolStrip.y + toolStrip.height
                 let largestStatsHeight = Math.max(terrainStatus.height, missionStats.height)
                 if (bottomOfToolStrip + largestStatsHeight > parent.height - missionStatus.anchors.margins) {
@@ -811,7 +870,7 @@ Item {
                     id: terrainButton
                     implicitWidth: missionStatsButtonLayout._buttonImplicitWidth
                     implicitHeight: implicitWidth
-                    color: checked ? QGroundControl.globalPalette.accent : QGroundControl.globalPalette.windowCard
+                    color: checked ? QGroundControl.globalPalette.selectionFill : QGroundControl.globalPalette.windowCard
 
                     property bool checked: true
 
@@ -835,7 +894,7 @@ Item {
                     id: missionStatsButton
                     implicitWidth: missionStatsButtonLayout._buttonImplicitWidth
                     implicitHeight: implicitWidth
-                    color: checked ? QGroundControl.globalPalette.accent : QGroundControl.globalPalette.windowCard
+                    color: checked ? QGroundControl.globalPalette.selectionFill : QGroundControl.globalPalette.windowCard
 
                     property bool checked: false
 

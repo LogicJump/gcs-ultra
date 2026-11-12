@@ -4,6 +4,7 @@
 #include <cmath>
 #include <functional>
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QList>
 #include <QtCore/QMetaObject>
 #include <QtCore/QObject>
@@ -321,6 +322,10 @@ void PlanPanelUITest::_testEmptyPlanStartsOnPlanTab()
         return;
 
     QCOMPARE(_currentTab(), QStringLiteral("plan"));
+    QQuickItem* const altitudeControl = findVisibleItem(_rootItem, QStringLiteral("planPanel_defaultAltitude"));
+    QVERIFY(altitudeControl);
+    QCOMPARE(altitudeControl->property("label").toString(),
+             QCoreApplication::translate("MissionDefaultsEditor", "Altitude"));
     QVERIFY2(waitForCondition([&] { return _editingLayer() == kPanelLayerPlan; }, 2000, QStringLiteral("plan layer")),
              "Empty plan did not start on the plan editing layer");
     verifyVisibility(QLatin1String(kPanelLayerSwitcher), false, QStringLiteral("layer switcher hidden"));
@@ -338,6 +343,10 @@ void PlanPanelUITest::_testEmptyPlanStartsOnPlanTab()
     // Templates need a home position, and a map click on the Plan tab sets it
     verifyVisibility(QLatin1String(kTemplatesColumn), true, QStringLiteral("templates shown for an empty plan"));
     verifyEnabled(QLatin1String(kTemplatesColumn), false, QStringLiteral("templates before home"));
+    QVERIFY(verifyText(
+        QStringLiteral("planPanel_homeHint"),
+        QCoreApplication::translate("PlanTabPage", "Set Home on the map to enable Mission, Fence and Rally."),
+        QStringLiteral("empty plan explains the required Home position")));
     if (QTest::currentTestFailed())
         return;
 
@@ -352,10 +361,13 @@ void PlanPanelUITest::_testEmptyPlanStartsOnPlanTab()
                  2000, QStringLiteral("home position set")),
              "Map click on the Plan tab did not set home");
     verifyEnabled(QLatin1String(kTemplatesColumn), true, QStringLiteral("templates after home"));
+    QVERIFY(verifyVisibility(QStringLiteral("planPanel_homeHint"), false,
+                             QStringLiteral("Home instruction disappears after setting Home")));
     QVERIFY2(waitForCondition(
                  [&] {
                      QQuickItem* const status = findVisibleItem(_rootItem, QLatin1String(kHomeStatus), 0);
-                     return status && status->property("text").toString().startsWith(QStringLiteral("Set"));
+                     return status && status->property("text").toString().startsWith(
+                                          QCoreApplication::translate("PlanTabPage", "Set"));
                  },
                  2000, QStringLiteral("home status")),
              "Plan tab did not report the home position as set");
@@ -378,13 +390,16 @@ void PlanPanelUITest::_testEmptyPlanStartsOnPlanTab()
     const QVariant validHomeAltitude = homeAltitude->property("fact").value<QObject*>()->property("valueString");
     QVERIFY2(enterInvalidValue(homeAltitude), "Non-numeric home altitude was accepted");
     const int itemCount = _missionController()->visualItems()->count();
-    QVERIFY2(clickButton(QStringLiteral("planCreator_Survey")), "Failed to click the Survey template");
+    QVERIFY2(clickButton(QStringLiteral("planCreator_") + QCoreApplication::translate("SurveyComplexItem", "Survey")),
+             "Failed to click the Survey template");
     QCOMPARE(_missionController()->visualItems()->count(), itemCount);
     QCOMPARE(_currentTab(), QStringLiteral("plan"));
     QVERIFY(restoreValidValue(homeAltitude, validHomeAltitude));
 
     // Choosing no template starts manual mission editing
-    QVERIFY2(clickButton(QStringLiteral("planCreator_No Template")), "Failed to click No Template");
+    QVERIFY2(
+        clickButton(QStringLiteral("planCreator_") + QCoreApplication::translate("BlankPlanCreator", "No Template")),
+        "Failed to click No Template");
     QVERIFY2(
         waitForCondition([&] { return _currentTab() == QStringLiteral("mission"); }, 2000, QStringLiteral("mission")),
         "No Template did not open the Mission tab");
@@ -416,7 +431,7 @@ void PlanPanelUITest::_testTabSelectionDrivesEditingLayer()
     };
 
     // Only the Plan tab, where home is set, can be opened until there is a home position
-    verifyText(QLatin1String(kStatusHint), QStringLiteral("Click in map to set Home"),
+    verifyText(QLatin1String(kStatusHint), QCoreApplication::translate("PlanView", "Click in map to set Home"),
                QStringLiteral("plan tab without home"));
     for (const QString& tab : {QStringLiteral("mission"), QStringLiteral("fence"), QStringLiteral("rally")}) {
         verifyEnabled(tabObjectName(tab), false, QStringLiteral("%1 tab without home").arg(tab));
@@ -442,7 +457,7 @@ void PlanPanelUITest::_testTabSelectionDrivesEditingLayer()
         verifyVisibility(QString::fromLatin1(kTakeoffButton), state.toolStripVisible, tab);
         verifyProperty(QLatin1String(kGeoFenceVisuals), "interactive", state.fenceInteractive, tab);
         verifyProperty(QLatin1String(kRallyVisuals), "interactive", state.rallyInteractive, tab);
-        const QString statusHint = QLatin1String(state.statusHint);
+        const QString statusHint = QCoreApplication::translate("PlanView", state.statusHint);
         verifyVisibility(QLatin1String(kStatusHint), !statusHint.isEmpty(), tab);
         if (!statusHint.isEmpty()) {
             verifyText(QLatin1String(kStatusHint), statusHint, tab);
@@ -481,6 +496,140 @@ void PlanPanelUITest::_testDefaultAltitudeChipOpensPlanTab()
     QVERIFY2(
         waitForCondition([&] { return _currentTab() == QStringLiteral("plan"); }, 2000, QStringLiteral("chip to plan")),
         "Default altitude chip did not open the Plan tab");
+}
+
+void PlanPanelUITest::_testDesktopListDockPreservesSelection()
+{
+    _startPlanPanel();
+    if (QTest::currentTestFailed()) {
+        return;
+    }
+
+    const QSize originalSize = _window->size();
+    const int originalMinimumWidth = _window->minimumWidth();
+    const auto restoreSize = qScopeGuard([this, originalSize, originalMinimumWidth] {
+        _window->setMinimumWidth(originalMinimumWidth);
+        _window->resize(originalSize);
+    });
+    _window->setMinimumWidth(0);
+    _window->resize(2440, 1000);
+    QQuickItem* const objectListDock = findVisibleItem(_rootItem, QStringLiteral("planView_objectListDock"));
+    QVERIFY(objectListDock);
+    QQuickItem* const planView = findVisibleItem(_rootItem, QStringLiteral("mainView_plan"));
+    QVERIFY(planView);
+    const qreal toolsMargin = planView->property("_toolsMargin").toReal();
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(objectListDock->x() - toolsMargin) < 1, TestTimeout::shortMs());
+    QVERIFY(findVisibleItem(_rootItem, rowObjectName(0)));
+    QVERIFY(verifyText(QStringLiteral("planPanel_missionEmptyHint"),
+                       QCoreApplication::translate("MissionItemList", "Set Home on the map in Plan to begin."),
+                       QStringLiteral("empty mission explains how to begin")));
+    QTRY_VERIFY_WITH_TIMEOUT(objectListDock->height() < objectListDock->parentItem()->height() / 2,
+                             TestTimeout::shortMs());
+    saveScreenshot(QStringLiteral("plan-dock-left"));
+    _buildMission(2);
+    if (QTest::currentTestFailed()) {
+        return;
+    }
+
+    QTRY_VERIFY_WITH_TIMEOUT(!findVisibleItem(_rootItem, QStringLiteral("planPanel_missionEmptyHint"), 0),
+                             TestTimeout::shortMs());
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(objectListDock->height() - objectListDock->parentItem()->height()) < 1,
+                             TestTimeout::shortMs());
+    QQuickItem* const toolStrip = findVisibleItem(_rootItem, QStringLiteral("planView_toolStrip"));
+    QVERIFY(toolStrip);
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(objectListDock->x() - toolStrip->x() - toolStrip->width() - toolsMargin) < 1,
+                             TestTimeout::shortMs());
+
+    verifyText(QStringLiteral("planPanel_missionRowName_0"),
+               QCoreApplication::translate("MissionItemRow", "Mission start settings"),
+               QStringLiteral("mission start row"));
+
+    QQuickItem* const list = findVisibleItem(_rootItem, QLatin1String(kMissionList));
+    QQuickItem* const inspector = findVisibleItem(_rootItem, QLatin1String(kInspectorLoader));
+    QQuickItem* const map = findVisibleItem(_rootItem, QStringLiteral("planView_map"));
+    QVERIFY(list);
+    QVERIFY(inspector);
+    QVERIFY(map);
+
+    QTRY_VERIFY2_WITH_TIMEOUT(
+        list->mapToScene(QPointF(list->width(), 0)).x() < inspector->mapToScene(QPointF()).x() - 300,
+        "The mission list and properties must leave a usable map between them", TestTimeout::shortMs());
+    QQuickItem* const terrainGraph = findItem(_rootItem, QStringLiteral("planTerrain_graph"));
+    QVERIFY(terrainGraph);
+    for (const char* const axisName : {"axisX", "axisY"}) {
+        QObject* const axis = terrainGraph->property(axisName).value<QObject*>();
+        QVERIFY(axis);
+        QTRY_VERIFY_WITH_TIMEOUT(std::isfinite(axis->property("min").toDouble()) &&
+                                     std::isfinite(axis->property("max").toDouble()) &&
+                                     axis->property("max").toDouble() > axis->property("min").toDouble(),
+                                 TestTimeout::shortMs());
+    }
+    const QRectF viewport = map->property("centerViewport").toRectF();
+    QVERIFY(viewport.width() >= 300);
+    QVERIFY(list->mapToScene(QPointF(list->width(), 0)).x() <= map->mapToScene(viewport.topLeft()).x());
+    QVERIFY(map->mapToScene(viewport.topRight()).x() <= inspector->mapToScene(QPointF()).x());
+
+    MissionController* const controller = _missionController();
+    QVERIFY(controller);
+    QVERIFY(clickButton(rowObjectName(1)));
+    QTRY_COMPARE(controller->currentPlanViewSeqNum(), 1);
+    verifyText(QLatin1String(kInspectorTitle), controller->currentPlanViewItem()->commandName(),
+               QStringLiteral("docked inspector follows the selected list item"));
+
+    _window->resize(900, 700);
+    QTRY_COMPARE_WITH_TIMEOUT(_rootItem->width(), qreal(900), TestTimeout::shortMs());
+    QCOMPARE(controller->currentPlanViewSeqNum(), 1);
+    QVERIFY(findVisibleItem(_rootItem, QLatin1String(kInspectorLoader)));
+    QVERIFY(findVisibleItem(_rootItem, QLatin1String(kInspectorBack)));
+    QVERIFY(clickButton(QLatin1String(kInspectorBack)));
+    QVERIFY(findVisibleItem(_rootItem, QLatin1String(kMissionList)));
+    QVERIFY(clickButton(rowObjectName(2)));
+    QTRY_COMPARE(controller->currentPlanViewSeqNum(), 2);
+
+    QQuickItem* const panelToggle = findVisibleItem(_rootItem, QStringLiteral("planView_panelToggle"));
+    QVERIFY(panelToggle);
+    QVERIFY2(panelToggle->parentItem()->property("_expanded").toBool(), "The panel must be open before collapsing it");
+    QVERIFY(clickButton(QStringLiteral("planView_panelToggle")));
+    QTRY_VERIFY2_WITH_TIMEOUT(inspector->mapToScene(QPointF()).x() >= _window->width(),
+                              qPrintable(QStringLiteral("Panel expanded=%1, inspector x=%2, window width=%3")
+                                             .arg(panelToggle->parentItem()->property("_expanded").toBool())
+                                             .arg(inspector->mapToScene(QPointF()).x())
+                                             .arg(_window->width())),
+                              TestTimeout::shortMs());
+
+    _window->resize(2440, 1000);
+    QTRY_VERIFY_WITH_TIMEOUT(inspector->mapToScene(QPointF(inspector->width(), 0)).x() <= _window->width(),
+                             TestTimeout::shortMs());
+    QTRY_VERIFY_WITH_TIMEOUT(
+        list->mapToScene(QPointF(list->width(), 0)).x() < inspector->mapToScene(QPointF()).x() - 300,
+        TestTimeout::shortMs());
+    QCOMPARE(controller->currentPlanViewSeqNum(), 2);
+    verifyText(QLatin1String(kInspectorTitle), controller->currentPlanViewItem()->commandName(),
+               QStringLiteral("selection survives docking the same list again"));
+
+    QVERIFY(_selectTab(QStringLiteral("fence")));
+    QTRY_VERIFY_WITH_TIMEOUT(!toolStrip->isVisible(), TestTimeout::shortMs());
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(objectListDock->x() - toolsMargin) < 1, TestTimeout::shortMs());
+    QVERIFY(!findVisibleItem(_rootItem, QLatin1String(kMissionList), 0));
+    QVERIFY(clickButton(QStringLiteral("planPanel_fenceAddCircle")));
+    QQuickItem* const fenceList = findVisibleItem(_rootItem, QStringLiteral("planPanel_fenceList"));
+    QVERIFY(fenceList);
+    QVERIFY(fenceList->mapToScene(QPointF(fenceList->width(), 0)).x() < inspector->mapToScene(QPointF()).x() - 300);
+    QVERIFY(findVisibleItem(_rootItem, QStringLiteral("planPanel_fenceRadius")));
+
+    QVERIFY(_selectTab(QStringLiteral("rally")));
+    QVERIFY(!findVisibleItem(_rootItem, QStringLiteral("planPanel_fenceList"), 0));
+    RallyPointController* const rally = _planMasterController()->rallyPointController();
+    rally->addPoint(QGeoCoordinate(47.3980, 8.5460, 50));
+    rally->addPoint(QGeoCoordinate(47.3981, 8.5461, 60));
+    QVERIFY(clickButton(QStringLiteral("planPanel_rallyRow_0")));
+    QTRY_COMPARE(rally->currentRallyPoint(), rally->points()->get(0));
+    QVERIFY(findVisibleItem(_rootItem, QStringLiteral("planPanel_rallyInspector_title")));
+
+    QVERIFY(_selectTab(QStringLiteral("mission")));
+    QVERIFY(!findVisibleItem(_rootItem, QStringLiteral("planPanel_rallyList"), 0));
+    QCOMPARE(controller->currentPlanViewSeqNum(), 2);
+    QVERIFY(findVisibleItem(_rootItem, QLatin1String(kMissionList)));
 }
 
 void PlanPanelUITest::_testMissionListFollowsItemsAndSelection()
@@ -876,15 +1025,25 @@ void PlanPanelUITest::_testGeoMapMarkerClickSelectsItem()
 
     QQuickItem* const map = findVisibleItem(_rootItem, QStringLiteral("planView_map"));
     QVERIFY(map);
-    QVariant screenPoint;
-    QVERIFY(QMetaObject::invokeMethod(map, "fromCoordinate", Q_RETURN_ARG(QVariant, screenPoint),
-                                      Q_ARG(QVariant, QVariant::fromValue(target->coordinate())),
-                                      Q_ARG(QVariant, false)));
-    const QPointF point = screenPoint.toPointF();
-    QVERIFY2(QRectF(QPointF(0, 0), map->size()).contains(point), "The target item is not on screen");
-    QVERIFY2(clickItemFraction(QStringLiteral("planView_map"), point.x() / map->width(), point.y() / map->height()),
+    QQuickItem* marker = nullptr;
+    QVERIFY2(waitForCondition(
+                 [&] {
+                     for (QQuickItem* const candidate : findGeoMapWaypointMarkers(map)) {
+                         if (candidate->property("item").value<QObject*>() == target && candidate->isVisible() &&
+                             candidate->property("projected").toBool() && candidate->width() > 0 &&
+                             candidate->height() > 0 && candidate->parentItem()->property("status").toInt() == 1) {
+                             marker = candidate;
+                             return true;
+                         }
+                     }
+                     return false;
+                 },
+                 TestTimeout::mediumMs(), QStringLiteral("target marker ready")),
+             "The asynchronous target marker did not become ready");
+    const QPointF point = marker->mapToItem(map, QPointF(marker->width() / 2, marker->height() / 2));
+    QVERIFY2(map->property("centerViewport").toRectF().contains(point), "The target marker is obscured by map tools");
+    QVERIFY2(_clickItemAt(marker, 0.5, 0.5, QStringLiteral("target mission marker")),
              "Failed to click the item marker");
-
     QVERIFY2(waitForCondition([&] { return controller->currentPlanViewItem() == target; }, 2000,
                               QStringLiteral("marker selects item")),
              "Clicking the item marker did not select the item");
@@ -940,6 +1099,21 @@ void PlanPanelUITest::_testGeoMapMarkerDragMovesOnlyTheCurrentItem()
 
     QQuickItem* const map = findVisibleItem(_rootItem, QStringLiteral("planView_map"));
     QVERIFY(map);
+    QQuickItem* marker = nullptr;
+    QVERIFY2(waitForCondition(
+                 [&] {
+                     for (QQuickItem* const candidate : findGeoMapWaypointMarkers(map)) {
+                         if (candidate->property("item").value<QObject*>() == target && candidate->isVisible() &&
+                             candidate->property("projected").toBool() && candidate->width() > 0 &&
+                             candidate->height() > 0 && candidate->parentItem()->property("status").toInt() == 1) {
+                             marker = candidate;
+                             return true;
+                         }
+                     }
+                     return false;
+                 },
+                 TestTimeout::mediumMs(), QStringLiteral("draggable marker ready")),
+             "The asynchronous target marker did not become ready");
     const auto windowPoint = [map](const QGeoCoordinate& coordinate) {
         QVariant screenPoint;
         const bool projected =
@@ -950,7 +1124,7 @@ void PlanPanelUITest::_testGeoMapMarkerDragMovesOnlyTheCurrentItem()
 
     const QGeoCoordinate before = target->coordinate();
     const double altitudeBefore = target->property("amslEntryAlt").toDouble();
-    const QPoint start = windowPoint(before);
+    const QPoint start = marker->mapToScene(QPointF(marker->width() / 2, marker->height() / 2)).toPoint();
     QVERIFY2(map->contains(map->mapFromScene(start)), "The marker is not on screen");
     const QPoint delta(-70, 50);
 
@@ -1060,13 +1234,32 @@ void PlanPanelUITest::_testGeoMapRallyMarkerDragMovesOnlyTheCurrentPoint()
 
     QQuickItem* const map = findVisibleItem(_rootItem, QStringLiteral("planView_map"));
     QVERIFY(map);
-    const auto windowPoint = [&](const QGeoCoordinate& coordinate) {
+    const auto targetCoordinate = [&]() { return target->property("coordinate").value<QGeoCoordinate>(); };
+    QQuickItem* marker = nullptr;
+    QVERIFY2(waitForCondition(
+                 [&] {
+                     const auto markers = findGeoMapItems(map, QStringLiteral("geoMapRallyPoint"));
+                     for (QQuickItem* const candidate : markers) {
+                         if (candidate->property("rallyPoint").value<QObject*>() == target && candidate->isVisible() &&
+                             candidate->property("projected").toBool() && candidate->width() > 0 &&
+                             candidate->height() > 0) {
+                             marker = candidate;
+                             return true;
+                         }
+                     }
+                     return false;
+                 },
+                 TestTimeout::mediumMs(), QStringLiteral("draggable rally marker ready")),
+             "The asynchronous target rally marker did not become ready");
+    const auto markerCenter = [marker] {
+        return marker->mapToScene(QPointF(marker->width() / 2, marker->height() / 2)).toPoint();
+    };
+    const auto windowPoint = [map](const QGeoCoordinate& coordinate) {
         return map->mapToScene(mapScreenPoint(map, coordinate)).toPoint();
     };
-    const auto targetCoordinate = [&]() { return target->property("coordinate").value<QGeoCoordinate>(); };
 
     const QGeoCoordinate before = targetCoordinate();
-    const QPoint start = windowPoint(before);
+    const QPoint start = markerCenter();
     QVERIFY2(map->contains(map->mapFromScene(start)), "The marker is not on screen");
     const QPoint delta(-70, 50);
 
@@ -1081,12 +1274,12 @@ void PlanPanelUITest::_testGeoMapRallyMarkerDragMovesOnlyTheCurrentPoint()
         QVERIFY2(waitForCondition([&] { return targetCoordinate().distanceTo(before) > 1.0; }, 2000,
                                   QStringLiteral("point moved")),
                  "Dragging the current point's marker did not move the point");
-        // The marker ends up under the cursor, with the point's altitude untouched
-        const QPoint end = windowPoint(targetCoordinate());
-        QVERIFY2((end - (start + delta)).manhattanLength() <= 4,
+        // The rendered marker ends up under the cursor, with the point's altitude untouched.
+        QVERIFY2(waitForCondition([&] { return (markerCenter() - (start + delta)).manhattanLength() <= 4; }, 2000,
+                                  QStringLiteral("rally marker follows cursor")),
                  qPrintable(QStringLiteral("Marker ended at %1,%2 instead of under the cursor at %3,%4")
-                                .arg(end.x())
-                                .arg(end.y())
+                                .arg(markerCenter().x())
+                                .arg(markerCenter().y())
                                 .arg(start.x() + delta.x())
                                 .arg(start.y() + delta.y())));
         QVERIFY(qFuzzyCompare(targetCoordinate().altitude(), before.altitude()));
@@ -1350,7 +1543,9 @@ void PlanPanelUITest::_testGeoMapTerrainRelativeDragKeepsTheMarkerUnderTheCursor
         targetCoordinate = [target] { return target->coordinate(); };
         findMarker = [&map, target]() -> QQuickItem* {
             for (QQuickItem* const marker : findGeoMapWaypointMarkers(map)) {
-                if (marker->property("item").value<QObject*>() == target) {
+                if (marker->property("item").value<QObject*>() == target && marker->isVisible() &&
+                    marker->property("projected").toBool() && marker->width() > 0 && marker->height() > 0 &&
+                    marker->parentItem()->property("status").toInt() == 1) {
                     return marker;
                 }
             }
@@ -1641,7 +1836,8 @@ void PlanPanelUITest::_testFenceTabAddsFenceInsideTheViewportOverTheDateline_dat
     QTest::addColumn<double>("longitude");
     QTest::addColumn<bool>("wide");
 
-    QTest::newRow("over the dateline") << 3.0 << 20.0 << 180.0 << false;
+    // Keep the widened viewport within the two hemispheres adjacent to the dateline.
+    QTest::newRow("over the dateline") << 4.0 << 20.0 << 180.0 << false;
     QTest::newRow("wider than a half turn") << 0.0 << 0.0 << 0.0 << true;
 }
 
@@ -2052,7 +2248,8 @@ void PlanPanelUITest::_testComplexItemEditorFitsInspector()
              "Home was not set");
 
     // The Survey template inserts settings, takeoff, the survey and land
-    QVERIFY2(clickButton(QStringLiteral("planCreator_Survey")), "Failed to click the Survey template");
+    QVERIFY2(clickButton(QStringLiteral("planCreator_") + QCoreApplication::translate("SurveyComplexItem", "Survey")),
+             "Failed to click the Survey template");
     QVERIFY2(waitForCondition([&] { return controller->visualItems()->count() == 4; }, 3000,
                               QStringLiteral("survey template")),
              "Survey template did not create the plan");
@@ -2213,8 +2410,8 @@ void PlanPanelUITest::_testFenceTabAddsSelectsAndEditsFences()
     verifyVisibility(QStringLiteral("planPanel_fenceRow_polygon_0"), true, QStringLiteral("polygon row"));
     verifyProperty(QStringLiteral("planPanel_fenceRow_polygon_0"), "selected", true,
                    QStringLiteral("new polygon selected"));
-    verifyText(QStringLiteral("planPanel_fenceInspector_title"), QStringLiteral("Polygon 1"),
-               QStringLiteral("polygon title"));
+    verifyText(QStringLiteral("planPanel_fenceInspector_title"),
+               QCoreApplication::translate("FenceInspector", "Polygon %1").arg(1), QStringLiteral("polygon title"));
     QVERIFY(polygon->property("interactive").toBool());
     if (QTest::currentTestFailed())
         return;
@@ -2224,7 +2421,7 @@ void PlanPanelUITest::_testFenceTabAddsSelectsAndEditsFences()
     polygon->setProperty("inclusion", false);
     verifyProperty(QStringLiteral("planPanel_fenceInclusion"), "currentIndex", 1,
                    QStringLiteral("inclusion change shown"));
-    verifyText(QStringLiteral("planPanel_fenceRowMeta"), QStringLiteral("Exclude"),
+    verifyText(QStringLiteral("planPanel_fenceRowMeta"), QCoreApplication::translate("FenceItemList", "Exclude"),
                QStringLiteral("row meta follows inclusion"));
     if (QTest::currentTestFailed())
         return;
@@ -2238,8 +2435,8 @@ void PlanPanelUITest::_testFenceTabAddsSelectsAndEditsFences()
                    QStringLiteral("new circle selected"));
     verifyProperty(QStringLiteral("planPanel_fenceRow_polygon_0"), "selected", false,
                    QStringLiteral("polygon deselected"));
-    verifyText(QStringLiteral("planPanel_fenceInspector_title"), QStringLiteral("Circle 1"),
-               QStringLiteral("circle title"));
+    verifyText(QStringLiteral("planPanel_fenceInspector_title"),
+               QCoreApplication::translate("FenceInspector", "Circle %1").arg(1), QStringLiteral("circle title"));
     verifyVisibility(QStringLiteral("planPanel_fenceRadius"), true, QStringLiteral("circle radius field"));
     QVERIFY(circle->property("interactive").toBool());
     QVERIFY(!polygon->property("interactive").toBool());
@@ -2277,8 +2474,8 @@ void PlanPanelUITest::_testFenceTabAddsSelectsAndEditsFences()
 
     // Breach return point is set and removed from its inspector
     QVERIFY2(clickButton(QStringLiteral("planPanel_fenceRow_breach")), "Failed to click the breach row");
-    verifyText(QStringLiteral("planPanel_fenceInspector_title"), QStringLiteral("Breach return point"),
-               QStringLiteral("breach title"));
+    verifyText(QStringLiteral("planPanel_fenceInspector_title"),
+               QCoreApplication::translate("FenceInspector", "Breach return point"), QStringLiteral("breach title"));
     verifyVisibility(QStringLiteral("planPanel_fenceInspector_delete"), false,
                      QStringLiteral("breach cannot be deleted"));
     verifyVisibility(QStringLiteral("planPanel_fenceBreachAltitude"), false,
@@ -2288,7 +2485,7 @@ void PlanPanelUITest::_testFenceTabAddsSelectsAndEditsFences()
     QVERIFY2(waitForCondition([&] { return fence->breachReturnPoint().isValid(); }, 2000, QStringLiteral("breach set")),
              "Set at map center did not set the breach return point");
     verifyVisibility(QStringLiteral("planPanel_fenceBreachAltitude"), true, QStringLiteral("altitude with a point"));
-    verifyText(QStringLiteral("planPanel_fenceRowMeta"), QStringLiteral("Exclude"),
+    verifyText(QStringLiteral("planPanel_fenceRowMeta"), QCoreApplication::translate("FenceItemList", "Exclude"),
                QStringLiteral("first row meta unchanged"));
     QQuickItem* const breachAltitude = findItem(_rootItem, QStringLiteral("planPanel_fenceBreachAltitude"));
     QVERIFY(breachAltitude);
@@ -2357,8 +2554,8 @@ void PlanPanelUITest::_testFenceInspectorStepsAcrossEntriesInDrillIn()
         return;
 
     QVERIFY2(clickButton(QStringLiteral("planPanel_fenceRow_polygon_0")), "Failed to open the polygon");
-    verifyText(QStringLiteral("planPanel_fenceInspector_title"), QStringLiteral("Polygon 1"),
-               QStringLiteral("polygon opened"));
+    verifyText(QStringLiteral("planPanel_fenceInspector_title"),
+               QCoreApplication::translate("FenceInspector", "Polygon %1").arg(1), QStringLiteral("polygon opened"));
     verifyVisibility(QStringLiteral("planPanel_fenceList"), false, QStringLiteral("list hidden while inspecting"));
     verifyEnabled(QStringLiteral("planPanel_fenceInspector_previous"), false,
                   QStringLiteral("no entry before the first"));
@@ -2367,15 +2564,16 @@ void PlanPanelUITest::_testFenceInspectorStepsAcrossEntriesInDrillIn()
 
     // Stepping walks polygons, circles and the breach return point in list order
     QVERIFY2(clickButton(QStringLiteral("planPanel_fenceInspector_next")), "Failed to step to the circle");
-    verifyText(QStringLiteral("planPanel_fenceInspector_title"), QStringLiteral("Circle 1"),
-               QStringLiteral("stepped to circle"));
+    verifyText(QStringLiteral("planPanel_fenceInspector_title"),
+               QCoreApplication::translate("FenceInspector", "Circle %1").arg(1), QStringLiteral("stepped to circle"));
     QVERIFY2(clickButton(QStringLiteral("planPanel_fenceInspector_next")), "Failed to step to the breach point");
-    verifyText(QStringLiteral("planPanel_fenceInspector_title"), QStringLiteral("Breach return point"),
+    verifyText(QStringLiteral("planPanel_fenceInspector_title"),
+               QCoreApplication::translate("FenceInspector", "Breach return point"),
                QStringLiteral("stepped to breach"));
     verifyEnabled(QStringLiteral("planPanel_fenceInspector_next"), false, QStringLiteral("no entry after the last"));
     QVERIFY2(clickButton(QStringLiteral("planPanel_fenceInspector_previous")), "Failed to step back");
-    verifyText(QStringLiteral("planPanel_fenceInspector_title"), QStringLiteral("Circle 1"),
-               QStringLiteral("stepped back"));
+    verifyText(QStringLiteral("planPanel_fenceInspector_title"),
+               QCoreApplication::translate("FenceInspector", "Circle %1").arg(1), QStringLiteral("stepped back"));
     QVERIFY(fence->circles()->get(0)->property("interactive").toBool());
     if (QTest::currentTestFailed())
         return;
@@ -2415,7 +2613,8 @@ void PlanPanelUITest::_testRallyTabListsSelectsAndDeletesPoints()
     verifyVisibility(QStringLiteral("planPanel_rallyRow_0"), true, QStringLiteral("first row"));
     verifyVisibility(QStringLiteral("planPanel_rallyRow_1"), true, QStringLiteral("second row"));
     verifyProperty(QStringLiteral("planPanel_rallyRow_1"), "selected", true, QStringLiteral("newest point selected"));
-    verifyText(QStringLiteral("planPanel_rallyInspector_title"), QStringLiteral("Rally Point 2"),
+    verifyText(QStringLiteral("planPanel_rallyInspector_title"),
+               QCoreApplication::translate("RallyPointInspector", "Rally Point %1").arg(2),
                QStringLiteral("newest title"));
     if (QTest::currentTestFailed())
         return;
@@ -2426,7 +2625,8 @@ void PlanPanelUITest::_testRallyTabListsSelectsAndDeletesPoints()
              "Clicking a rally row did not select the point");
     verifyProperty(QStringLiteral("planPanel_rallyRow_0"), "selected", true, QStringLiteral("clicked row selected"));
     verifyProperty(QStringLiteral("planPanel_rallyRow_1"), "selected", false, QStringLiteral("other row deselected"));
-    verifyText(QStringLiteral("planPanel_rallyInspector_title"), QStringLiteral("Rally Point 1"),
+    verifyText(QStringLiteral("planPanel_rallyInspector_title"),
+               QCoreApplication::translate("RallyPointInspector", "Rally Point %1").arg(1),
                QStringLiteral("clicked title"));
     if (QTest::currentTestFailed())
         return;
@@ -2475,17 +2675,20 @@ void PlanPanelUITest::_testRallyInspectorStepsInDrillIn()
         return;
 
     QVERIFY2(clickButton(QStringLiteral("planPanel_rallyRow_1")), "Failed to open the middle point");
-    verifyText(QStringLiteral("planPanel_rallyInspector_title"), QStringLiteral("Rally Point 2"),
+    verifyText(QStringLiteral("planPanel_rallyInspector_title"),
+               QCoreApplication::translate("RallyPointInspector", "Rally Point %1").arg(2),
                QStringLiteral("middle point opened"));
     verifyVisibility(QStringLiteral("planPanel_rallyList"), false, QStringLiteral("list hidden while inspecting"));
 
     QVERIFY2(clickButton(QStringLiteral("planPanel_rallyInspector_next")), "Failed to step forward");
-    verifyText(QStringLiteral("planPanel_rallyInspector_title"), QStringLiteral("Rally Point 3"),
+    verifyText(QStringLiteral("planPanel_rallyInspector_title"),
+               QCoreApplication::translate("RallyPointInspector", "Rally Point %1").arg(3),
                QStringLiteral("stepped forward"));
     verifyEnabled(QStringLiteral("planPanel_rallyInspector_next"), false, QStringLiteral("no point after the last"));
     QVERIFY2(clickButton(QStringLiteral("planPanel_rallyInspector_previous")), "Failed to step back");
     QVERIFY2(clickButton(QStringLiteral("planPanel_rallyInspector_previous")), "Failed to step back to the first");
-    verifyText(QStringLiteral("planPanel_rallyInspector_title"), QStringLiteral("Rally Point 1"),
+    verifyText(QStringLiteral("planPanel_rallyInspector_title"),
+               QCoreApplication::translate("RallyPointInspector", "Rally Point %1").arg(1),
                QStringLiteral("stepped to first"));
     verifyEnabled(QStringLiteral("planPanel_rallyInspector_previous"), false,
                   QStringLiteral("no point before the first"));
@@ -2501,7 +2704,8 @@ void PlanPanelUITest::_testRallyInspectorStepsInDrillIn()
 
     // An invalid field keeps the inspector open until it is corrected
     QVERIFY2(clickButton(QStringLiteral("planPanel_rallyRow_0")), "Failed to reopen the first point");
-    verifyText(QStringLiteral("planPanel_rallyInspector_title"), QStringLiteral("Rally Point 1"),
+    verifyText(QStringLiteral("planPanel_rallyInspector_title"),
+               QCoreApplication::translate("RallyPointInspector", "Rally Point %1").arg(1),
                QStringLiteral("first point reopened"));
     verifyVisibility(QStringLiteral("rallyPointAltitudeField"), true, QStringLiteral("altitude field"));
     verifyVisibility(QStringLiteral("rallyPointAltitudeFrameCombo"), true, QStringLiteral("altitude frame selector"));
@@ -2519,7 +2723,8 @@ void PlanPanelUITest::_testRallyInspectorStepsInDrillIn()
     verifyVisibility(QStringLiteral("planPanel_rallyInspector_title"), true,
                      QStringLiteral("back blocked by the invalid field"));
     QVERIFY2(clickButton(QStringLiteral("planPanel_rallyInspector_next")), "Failed to click Next");
-    verifyText(QStringLiteral("planPanel_rallyInspector_title"), QStringLiteral("Rally Point 1"),
+    verifyText(QStringLiteral("planPanel_rallyInspector_title"),
+               QCoreApplication::translate("RallyPointInspector", "Rally Point %1").arg(1),
                QStringLiteral("step blocked by the invalid field"));
     _clickMap(0.3, 0.4);
     if (QTest::currentTestFailed())

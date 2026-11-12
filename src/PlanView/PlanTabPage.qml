@@ -85,6 +85,64 @@ QGCFlickable {
             }
         }
 
+        PlanPanelGroupHeader {
+            text: qsTr("Planned Home position")
+        }
+
+        RowLayout {
+            Layout.fillWidth:   true
+            spacing:            root._margin
+
+            Rectangle {
+                Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 0.5
+                Layout.preferredHeight: Layout.preferredWidth
+                radius:                 width / 2
+                color:                  root._missionController.homePositionSet ? qgcPal.colorGreen : "transparent"
+                border.color:           root._missionController.homePositionSet ? qgcPal.colorGreen : qgcPal.textSecondary
+            }
+
+            QGCLabel {
+                objectName:         "planPanel_homeStatus"
+                Layout.fillWidth:   true
+                wrapMode:           Text.WordWrap
+                text: {
+                    if (!root._missionController.homePositionSet) {
+                        return qsTr("Not set. Click in the map to set it.")
+                    }
+                    if (root._settingsItem) {
+                        if (root._settingsItem.terrainQueryFailed) {
+                            return qsTr("Set, altitude (AMSL)")
+                        }
+                        return qsTr("Set, %1 %2 AMSL").arg(root._settingsItem.plannedHomePositionAltitude.valueString).arg(root._settingsItem.plannedHomePositionAltitude.units)
+                    }
+                    return qsTr("Set")
+                }
+            }
+
+            Loader {
+                active: root._missionController.homePositionSet && root._settingsItem !== null && root._settingsItem.terrainQueryFailed
+
+                sourceComponent: FactTextField {
+                    objectName: "planPanel_homeAltitude"
+                    fact:       root._settingsItem.plannedHomePositionAltitude
+                }
+            }
+        }
+
+        QGCLabel {
+            objectName: "planPanel_homeHint"
+            Layout.fillWidth: true
+            text: qsTr("Set Home on the map to enable Mission, Fence and Rally.")
+            color: qgcPal.textSecondary
+            font.pointSize: ScreenTools.smallFontPointSize
+            wrapMode: Text.WordWrap
+            visible: !root._missionController.homePositionSet
+        }
+
+        PlanPanelGroupHeader {
+            text: qsTr("Vehicle")
+        }
+
         RowLayout {
             Layout.fillWidth:   true
             spacing:            root._margin
@@ -136,52 +194,6 @@ QGCFlickable {
                 Layout.fillWidth:   true
                 text:               root._controllerVehicle ? root._controllerVehicle.vehicleTypeString : ""
                 visible:            !root._allowVehicleSelection
-            }
-        }
-
-        RowLayout {
-            Layout.fillWidth:   true
-            spacing:            root._margin
-
-            QGCLabel {
-                Layout.preferredWidth:  root._labelWidth
-                text:                   qsTr("Home")
-                color:                  qgcPal.textSecondary
-            }
-
-            Rectangle {
-                Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 0.5
-                Layout.preferredHeight: Layout.preferredWidth
-                radius:                 width / 2
-                color:                  root._missionController.homePositionSet ? qgcPal.colorGreen : "transparent"
-                border.color:           root._missionController.homePositionSet ? qgcPal.colorGreen : qgcPal.textSecondary
-            }
-
-            QGCLabel {
-                objectName:         "planPanel_homeStatus"
-                Layout.fillWidth:   true
-                wrapMode:           Text.WordWrap
-                text: {
-                    if (!root._missionController.homePositionSet) {
-                        return qsTr("Not set. Click in the map to set it.")
-                    }
-                    if (root._settingsItem) {
-                        if (root._settingsItem.terrainQueryFailed) {
-                            return qsTr("Set, altitude (AMSL)")
-                        }
-                        return qsTr("Set, %1 %2 AMSL").arg(root._settingsItem.plannedHomePositionAltitude.valueString).arg(root._settingsItem.plannedHomePositionAltitude.units)
-                    }
-                    return qsTr("Set")
-                }
-            }
-
-            Loader {
-                active: root._missionController.homePositionSet && root._settingsItem !== null && root._settingsItem.terrainQueryFailed
-
-                sourceComponent: FactTextField {
-                    objectName: "planPanel_homeAltitude"
-                    fact:       root._settingsItem.plannedHomePositionAltitude
-                }
             }
         }
 

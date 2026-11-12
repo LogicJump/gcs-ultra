@@ -11,6 +11,7 @@ ColumnLayout {
     id: root
 
     required property var planMasterController
+    property Item listHost: null
 
     readonly property var   controller:     planMasterController.rallyPointController
     readonly property var   points:         controller.points
@@ -88,6 +89,7 @@ ColumnLayout {
         hasSelection:       root.current !== null
         listComponent:      rallyListComponent
         inspectorComponent: rallyInspectorComponent
+        listHost:           root.listHost
     }
 
     Component {

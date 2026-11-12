@@ -36,7 +36,7 @@ Rectangle {
             Layout.preferredWidth:  root._badgeSize
             Layout.preferredHeight: root._badgeSize
             radius:                 width / 2
-            color:                  root._current ? qgcPal.accent : "transparent"
+            color:                  root._current ? qgcPal.selectionFill : "transparent"
             border.width:           2
             border.color:           root._ready ? (root._current ? qgcPal.accent : qgcPal.textPrimary) : qgcPal.warningText
 
@@ -52,8 +52,9 @@ Rectangle {
         }
 
         QGCLabel {
+            objectName:         "planPanel_missionRowName_" + root.object.sequenceNumber
             Layout.fillWidth:   true
-            text:               root.object.commandName
+            text:               root.object.homePosition ? qsTr("Mission start settings") : root.object.commandName
             elide:              Text.ElideRight
         }
 

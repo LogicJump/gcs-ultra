@@ -8,7 +8,7 @@ import QGroundControl.PlanView
 
 import "PlanPanelLogic.js" as Logic
 
-/// Tabbed Plan View panel: Plan, Mission, GeoFence and Rally Points. The tab pills hang off the left edge of the panel.
+/// Plan, Mission, GeoFence and Rally Points share one selection model across the list and inspector.
 Item {
     id: root
 
@@ -18,6 +18,7 @@ Item {
     signal editingLayerChangeRequested(int layer)
 
     property string currentTab: Logic.TabPlan
+    property Item listHost: null
 
     readonly property var   _missionController:     planMasterController.missionController
     readonly property var   _visualItems:           _missionController.visualItems
@@ -175,6 +176,7 @@ Item {
             planMasterController:   root.planMasterController
             editorMap:              root.editorMap
             incompleteCount:        root._incompleteCount
+            listHost:               root.listHost
 
             onPlanTabRequested: root.selectTab(Logic.TabPlan)
         }
@@ -182,10 +184,24 @@ Item {
         FenceTabPage {
             planMasterController:   root.planMasterController
             editorMap:              root.editorMap
+            listHost:               root.listHost
         }
 
         RallyTabPage {
             planMasterController: root.planMasterController
+            listHost:             root.listHost
+        }
+    }
+
+    Loader {
+        parent: root.listHost ?? root
+        anchors.fill: parent
+        active: root.listHost !== null && root.currentTab === Logic.TabPlan
+        visible: active && root.visible
+
+        sourceComponent: MissionItemList {
+            missionController: root._missionController
+            onItemActivated: root.showItemInspector()
         }
     }
 
@@ -194,9 +210,14 @@ Item {
 
         objectName:     "planPanel_tabBar"
         // Hangs off the left edge with its inner side tucked under the card
-        x:              -width + ScreenTools.defaultBorderRadius * 2
-        y:              ScreenTools.defaultFontPixelHeight
-        z:              -1
+        parent:         root.listHost ? root.listHost.parent : root
+        x:              root.listHost ? ScreenTools.defaultFontPixelWidth * 0.5
+                                     : -width + ScreenTools.defaultBorderRadius * 2
+        y:              root.listHost ? 0 : ScreenTools.defaultFontPixelHeight
+        width:          root.listHost ? root.listHost.width : implicitWidth
+        z:              root.listHost ? 1 : -1
+        visible:        root.visible
+        horizontal:     root.listHost !== null
         model:          root.tabModel
         currentTab:     root.currentTab
         style:          Logic.tabStyle(root.height - y, ScreenTools.defaultFontPixelHeight)

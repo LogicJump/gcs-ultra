@@ -84,6 +84,7 @@ Rectangle {
         }
 
         FactTextFieldSlider {
+            objectName: "planPanel_defaultAltitude"
             Layout.fillWidth: true
             label: qsTr("Altitude")
             fact: QGroundControl.settingsManager.appSettings.defaultMissionItemAltitude

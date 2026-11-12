@@ -9,7 +9,7 @@ import QGroundControl.FactControls
 Rectangle {
     id: root
     height: _currentItem ? valuesRect.y + valuesRect.height + _innerMargin : titleLayout.y + titleLayout.height + _margin
-    color: _currentItem ? qgcPal.accent : qgcPal.windowCard
+    color: _currentItem ? qgcPal.selectionFill : qgcPal.windowCard
     radius: _radius
 
     property var rallyPoint ///< RallyPoint object associated with editor
@@ -20,7 +20,7 @@ Rectangle {
 
     readonly property real _margin: ScreenTools.defaultFontPixelWidth / 2
     readonly property real  _innerMargin: 2
-    readonly property real _radius: ScreenTools.defaultFontPixelWidth / 2
+    readonly property real _radius: ScreenTools.defaultBorderRadius
     readonly property real _titleHeight: ScreenTools.implicitComboBoxHeight + ScreenTools.defaultFontPixelWidth
 
     QGCPalette { id: qgcPal; colorGroupEnabled: true }

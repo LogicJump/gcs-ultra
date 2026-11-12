@@ -5,8 +5,8 @@ import QGroundControl.Controls
 
 import "PlanPanelLogic.js" as Logic
 
-/// Shows a list and an inspector for the selected list entry. When the height allows, the list sits above the inspector. On
-/// short screens the list and the inspector take turns filling the whole area.
+/// Shows a list and an inspector for the selected entry. An external list host docks the list beside the map;
+/// otherwise the list and inspector stack on tall screens and take turns on short screens.
 ///
 /// The list component exposes contentHeight and may emit itemActivated(). The inspector component may emit backRequested().
 Item {
@@ -17,12 +17,14 @@ Item {
     property bool       hasSelection:       false
     property string     layoutModeOverride: ""      ///< "split" or "drillIn" to bypass the height check
     property real       userListHeight:     -1      ///< Set by dragging the divider, negative uses the height of the list content
+    property Item       listHost:           null
 
-    readonly property string layoutMode:        layoutModeOverride !== "" ? layoutModeOverride : Logic.layoutMode(height, ScreenTools.defaultFontPixelHeight)
-    readonly property bool   inspectorVisible:  hasSelection && (layoutMode === "split" || _inspectorOpen)
-    readonly property bool   listVisible:       layoutMode === "split" || !inspectorVisible
+    readonly property string layoutMode:        layoutModeOverride !== "" ? layoutModeOverride : listHost ? "docked" : Logic.layoutMode(height, ScreenTools.defaultFontPixelHeight)
+    readonly property bool   inspectorVisible:  hasSelection && (layoutMode === "docked" || layoutMode === "split" || _inspectorOpen)
+    readonly property bool   listVisible:       layoutMode === "docked" || layoutMode === "split" || !inspectorVisible
 
     property bool _inspectorOpen: false
+    property string _previousLayoutMode: ""
 
     readonly property real _dividerHeight:      Math.max(ScreenTools.defaultFontPixelHeight * 0.8, ScreenTools.isMobile ? ScreenTools.minTouchPixels * 0.5 : 0)
     readonly property real _minListHeight:      ScreenTools.defaultFontPixelHeight * 4
@@ -50,11 +52,14 @@ Item {
     }
 
     onLayoutModeChanged: {
-        if (layoutMode === "drillIn" && hasSelection && !mainWindow.allowViewSwitch(0, false)) {
+        if (hasSelection && (_previousLayoutMode === "docked"
+                || (layoutMode === "drillIn" && ((layoutModeOverride === "" && _inspectorOpen)
+                                                || !mainWindow.allowViewSwitch(0, false))))) {
             openInspector()
         } else {
             closeInspector()
         }
+        _previousLayoutMode = layoutMode
     }
 
     QGCPalette { id: qgcPal }
@@ -73,11 +78,12 @@ Item {
         id: listLoader
 
         objectName:         "planPanel_listLoader"
+        parent:             root.layoutMode === "docked" ? root.listHost : root
         x:                  0
         y:                  0
-        width:              root.width
-        height:             root.layoutMode === "split" ? (root.inspectorVisible ? root._splitListHeight : root.height) : root.height
-        visible:            root.listVisible
+        width:              parent.width
+        height:             root.layoutMode === "docked" ? parent.height : root.layoutMode === "split" ? (root.inspectorVisible ? root._splitListHeight : root.height) : root.height
+        visible:            root.visible && root.listVisible
         sourceComponent:    root.listComponent
     }
 

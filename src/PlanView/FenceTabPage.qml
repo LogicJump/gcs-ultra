@@ -14,6 +14,7 @@ ColumnLayout {
 
     required property var planMasterController
     required property var editorMap
+    property Item listHost: null
 
     property var selection: ({ "kind": "", "index": -1 })    ///< kind is "polygon", "circle", "breach" or empty
 
@@ -345,6 +346,7 @@ ColumnLayout {
         hasSelection:       root.hasSelection
         listComponent:      fenceListComponent
         inspectorComponent: fenceInspectorComponent
+        listHost:           root.listHost
     }
 
     Component {

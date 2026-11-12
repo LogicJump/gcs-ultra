@@ -25,6 +25,7 @@ private slots:
     void _testTabSelectionDrivesEditingLayer();
     void _testDefaultAltitudeChipOpensPlanTab();
     void _testMissionListFollowsItemsAndSelection();
+    void _testDesktopListDockPreservesSelection();
     void _testItemsAddedOnPlanTabSwitchToMission();
     void _testIncompleteItemsAreFlagged();
     void _testDrillInShowsListOrInspector();

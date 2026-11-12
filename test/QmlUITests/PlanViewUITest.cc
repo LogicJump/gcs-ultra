@@ -2,6 +2,7 @@
 
 #include <QtCore/QFile>
 #include <QtCore/QScopeGuard>
+#include <QtCore/QStringList>
 #include <QtCore/QTemporaryDir>
 #include <QtPositioning/QGeoCoordinate>
 #include <QtQuick/QQuickItem>
@@ -587,10 +588,101 @@ void PlanViewUITest::_testPlanViewStates()
     // ------------------------------------------------------------------
     // 1.6 Modify plan again: Save highlight returns
     // ------------------------------------------------------------------
+    // Select the existing tail so the normal map-click path appends the second waypoint.
+    QQuickItem* const planView = findVisibleItem(_rootItem, QStringLiteral("mainView_plan"));
+    QVERIFY(planView);
+    MissionController* const missionController =
+        qobject_cast<MissionController*>(planView->property("_missionController").value<QObject*>());
+    QVERIFY(missionController);
+    const int tailIndex = missionController->visualItems()->count() - 1;
+    SimpleMissionItem* const tailWaypoint = missionController->visualItems()->value<SimpleMissionItem*>(tailIndex);
+    QVERIFY(tailWaypoint);
+    missionController->setCurrentPlanViewSeqNum(tailWaypoint->sequenceNumber(), true);
+    QCOMPARE(missionController->currentPlanViewVIIndex(), tailIndex);
+
     QVERIFY2(clickButton(waypointBtn), "Failed to click Waypoint button (second)");
-    _clickMap(0.65, 0.6);
-    if (QTest::currentTestFailed()) return;
+    QQuickItem* const map = findVisibleItem(_rootItem, QStringLiteral("planView_map"));
+    QVERIFY(map);
+    const QRectF viewport = map->property("centerViewport").toRectF();
+    QVERIFY(!viewport.isEmpty());
+
+    QPointF clickPoint(viewport.x() + (viewport.width() * 0.65), viewport.y() + (viewport.height() * 0.6));
+    if (!_geoMapEngine) {
+        QQuickItem* mapClickReceiver = nullptr;
+        for (QQuickItem* const child : map->childItems()) {
+            if (child->metaObject()->indexOfProperty("maximumTouchPoints") >= 0 &&
+                child->property("mouseEnabled").toBool()) {
+                mapClickReceiver = child;
+                break;
+            }
+        }
+        QVERIFY2(mapClickReceiver, "QtLocation map click receiver not found");
+
+        const QList<QQuickItem*> inputItems = map->findChildren<QQuickItem*>(QString(), Qt::FindChildrenRecursively);
+        bool clearMapPointFound = false;
+        for (int yStep = 1; yStep < 8 && !clearMapPointFound; ++yStep) {
+            for (int xStep = 1; xStep < 8; ++xStep) {
+                const QPointF candidate(viewport.x() + (viewport.width() * xStep / 8.0),
+                                        viewport.y() + (viewport.height() * yStep / 8.0));
+                if (!mapClickReceiver->contains(mapClickReceiver->mapFromItem(map, candidate))) {
+                    continue;
+                }
+
+                bool blocked = false;
+                for (QQuickItem* const inputItem : inputItems) {
+                    if (inputItem == mapClickReceiver || !inputItem->isVisible() || !inputItem->isEnabled() ||
+                        inputItem->opacity() <= 0.0 || !inputItem->contains(inputItem->mapFromItem(map, candidate))) {
+                        continue;
+                    }
+                    const QVariant acceptedButtons = inputItem->property("acceptedButtons");
+                    const bool acceptsLeftButton =
+                        acceptedButtons.isValid() && (acceptedButtons.toInt() & static_cast<int>(Qt::LeftButton));
+                    const bool acceptsMouseAsTouch =
+                        inputItem->metaObject()->indexOfProperty("maximumTouchPoints") >= 0 &&
+                        inputItem->property("mouseEnabled").toBool();
+                    if (acceptsLeftButton || acceptsMouseAsTouch) {
+                        blocked = true;
+                        break;
+                    }
+                }
+                if (blocked) {
+                    continue;
+                }
+
+                clickPoint = candidate;
+                clearMapPointFound = true;
+                break;
+            }
+        }
+        QVERIFY2(clearMapPointFound, "No unobstructed QtLocation map click point found in centerViewport");
+    }
+    QVERIFY2(clickItemFraction(QStringLiteral("planView_map"), clickPoint.x() / map->width(),
+                               clickPoint.y() / map->height()),
+             "Failed to click the unobscured Plan map viewport");
+    if (QTest::currentTestFailed())
+        return;
     QTest::qWait(_pageDelay);
+
+    QVERIFY2(waitForCondition([&] { return missionController->visualItems()->count() == 4; }, 2000,
+                              QStringLiteral("second waypoint inserted")),
+             "1.6 modify: second waypoint was not inserted");
+    QStringList missionOrder;
+    for (int index = 0; index < missionController->visualItems()->count(); ++index) {
+        auto* const item = missionController->visualItems()->value<VisualMissionItem*>(index);
+        const auto* const simpleItem = qobject_cast<SimpleMissionItem*>(item);
+        missionOrder.append(QStringLiteral("index=%1 seq=%2 command=%3 current=%4")
+                                .arg(index)
+                                .arg(item ? item->sequenceNumber() : -1)
+                                .arg(simpleItem ? simpleItem->mavCommand() : -1)
+                                .arg(item && item->isCurrentItem()));
+    }
+    const int currentIndex = missionController->currentPlanViewVIIndex();
+    const bool landValid = missionController->property("isInsertLandValid").toBool();
+    QVERIFY2(currentIndex == missionController->visualItems()->count() - 1 && landValid,
+             qPrintable(QStringLiteral("1.6 modify: insertion state currentIndex=%1 landValid=%2; %3")
+                            .arg(currentIndex)
+                            .arg(landValid)
+                            .arg(missionOrder.join(QLatin1String("; ")))));
 
     _verifyFullState({
         .templatesVisible = false,
