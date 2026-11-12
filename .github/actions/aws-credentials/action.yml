@@ -1,0 +1,38 @@
+name: AWS Credentials
+description: >-
+  Configure AWS credentials via OIDC (preferred) or static keys. Shared by
+  attest-and-upload and the GStreamer and runner-image workflows so they
+  can't drift on configure-aws-credentials version or inputs.
+
+inputs:
+  aws-role-arn:
+    description: AWS IAM role ARN for OIDC authentication (preferred over static credentials)
+    required: false
+    default: ''
+  aws-key-id:
+    description: AWS access key ID (used only when aws-role-arn is empty)
+    required: false
+    default: ''
+  aws-secret-access-key:
+    description: AWS secret access key (used only when aws-role-arn is empty)
+    required: false
+    default: ''
+  aws-region:
+    description: AWS region
+    required: false
+    default: 'us-west-2'
+
+runs:
+  using: composite
+  steps:
+    # configure-aws-credentials reads every input with core.getInput, so an empty
+    # string is the same as an omitted input: a role ARN selects OIDC and the
+    # static keys are only passed without one.
+    - name: Configure AWS Credentials
+      if: inputs.aws-role-arn != '' || inputs.aws-key-id != ''
+      uses: aws-actions/configure-aws-credentials@v6
+      with:
+        role-to-assume: ${{ inputs.aws-role-arn }}
+        aws-access-key-id: ${{ inputs.aws-role-arn == '' && inputs.aws-key-id || '' }}
+        aws-secret-access-key: ${{ inputs.aws-role-arn == '' && inputs.aws-secret-access-key || '' }}
+        aws-region: ${{ inputs.aws-region }}

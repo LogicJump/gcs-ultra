@@ -1,0 +1,30 @@
+{
+    "version":      1,
+    "fileType":  "FactMetaData",
+    "QGC.MetaData.Facts":
+[
+{
+    "name":             "GridAngle",
+    "shortDesc": "Angle for parallel lines of grid.",
+    "type":             "double",
+    "units":            "deg",
+    "min":              -360.0,
+    "max":              360.0,
+    "decimalPlaces":    1,
+    "default":     0
+},
+{
+    "name":             "FlyAlternateTransects",
+    "shortDesc": "Fly every other transect in each pass.",
+    "type":             "bool",
+    "default":     false
+},
+{
+    "name":             "SplitConcavePolygons",
+    "shortDesc": "Split transects at concave polygon boundaries.",
+    "longDesc": "Transects which cross a concave gap are split into separate segments. The vehicle still flies straight across the gap. Images are only stopped over the gap when images in turnarounds is disabled.",
+    "type":             "bool",
+    "default":     false
+}
+]
+}

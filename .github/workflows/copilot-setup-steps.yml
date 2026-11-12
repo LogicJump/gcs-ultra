@@ -1,0 +1,104 @@
+name: Copilot Setup Steps
+
+# Prepares the Copilot cloud agent's environment the way AGENTS.md expects (`just configure`,
+# `just build`, `just test`, `just lint`). Copilot runs the job before each session; run the
+# workflow by hand to check the setup after changing it or `just configure`'s inputs.
+on:
+  workflow_dispatch:
+  # Copilot sessions (event "dynamic") restore only the default branch's GitHub caches and cannot
+  # save any, and master's Linux builds save theirs to RunsOn's S3. These master runs save the
+  # apt download and Qt caches the sessions restore, but GitHub evicts both from the repository's
+  # full 10 GB cache pool within hours. The runs therefore also upload the apt downloads as an
+  # artifact for sessions, so a slow Ubuntu mirror cannot stall a session's setup.
+  schedule:
+    - cron: '17 4 * * *'
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/copilot-setup-steps.yml'
+      - '.github/actions/build-setup/**'
+      - '.github/actions/install-dependencies/**'
+      - '.github/actions/qt-install/**'
+      - '.github/build-config.json'
+      - 'tools/setup/install_dependencies/**'
+
+permissions:
+  contents: read
+
+jobs:
+  # Copilot only picks up a job with exactly this name, and ignores job settings other than
+  # steps, permissions, runs-on, services, snapshot and timeout-minutes (59 at most).
+  copilot-setup-steps:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 59
+
+    permissions:
+      contents: read
+      # build-setup's cache action reads the default branch's compiler snapshot artifacts on manual
+      # runs, and sessions (event "dynamic") and manual runs read the apt download artifact.
+      actions: read
+
+    # Copilot cancels a session whose setup runs past about 20 minutes, so a stalled step (a slow
+    # Ubuntu mirror once held Install Dependencies for 18) lost the whole session. In sessions
+    # (event "dynamic") each slow step times out within that budget instead: Copilot skips the
+    # remaining setup steps after a failed one and starts with the environment as it is. The
+    # master runs that save the sessions' caches keep generous limits so they finish.
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Build Setup
+        timeout-minutes: ${{ github.event_name == 'dynamic' && 5 || 15 }}
+        uses: ./.github/actions/build-setup
+        with:
+          qt-host: linux
+          qt-arch: linux_gcc_64
+          build-type: Debug
+          save-cache: 'false'
+          python-groups: dev
+
+      # Manual runs restore too, so checking the setup by hand exercises what sessions do.
+      - name: Restore apt downloads
+        if: github.event_name == 'dynamic' || github.event_name == 'workflow_dispatch'
+        timeout-minutes: 2
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 "${GITHUB_WORKSPACE}/tools/ci/runner/apt_debs_artifact.py"
+
+      - name: Install Dependencies
+        timeout-minutes: ${{ github.event_name == 'dynamic' && 5 || 25 }}
+        uses: ./.github/actions/install-dependencies
+
+      # Restores trust only master's runs, so other branches' manual runs would only use storage.
+      - name: Upload apt downloads
+        if: github.event_name != 'dynamic' && github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@v7
+        with:
+          name: copilot-apt-debs
+          path: ~/.cache/qgc-apt-archives/*.deb
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Restore prek environments
+        timeout-minutes: ${{ github.event_name == 'dynamic' && 2 || 5 }}
+        uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.cache/prek
+            !~/.cache/prek/cache
+          key: prek-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            prek-v1-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: Configure
+        timeout-minutes: ${{ github.event_name == 'dynamic' && 5 || 12 }}
+        run: just configure

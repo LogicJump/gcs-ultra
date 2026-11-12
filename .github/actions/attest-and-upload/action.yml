@@ -1,0 +1,140 @@
+name: Attest and Upload
+description: Attest build provenance and SBOMs, then upload the build artifact (GitHub + optional AWS)
+
+inputs:
+  artifact-name:
+    description: 'Artifact filename (e.g. QGroundControl.AppImage)'
+    required: true
+  package-name:
+    description: 'Package name for GitHub artifact'
+    required: true
+  subject-name:
+    description: 'SBOM subject name (defaults to package-name)'
+    required: false
+    default: ''
+  aws-role-arn:
+    description: 'AWS IAM role ARN for OIDC authentication (preferred)'
+    required: false
+    default: ''
+  aws-key-id:
+    description: 'AWS access key ID'
+    required: false
+    default: ''
+  aws-secret-access-key:
+    description: 'AWS secret access key'
+    required: false
+    default: ''
+  aws-distribution-id:
+    description: 'AWS CloudFront distribution ID'
+    required: false
+    default: ''
+  upload-aws:
+    description: 'Upload artifact to AWS'
+    required: false
+    default: 'true'
+  artifact-source-path:
+    description: >-
+      Override for the source path of the artifact. Defaults to
+      <runner.temp>/build/<artifact-name>. Use this for multi-config
+      generators (e.g. iOS Ninja Multi-Config writes to build/Release/<bundle>).
+    required: false
+    default: ''
+  additional-artifact-paths:
+    description: 'Optional newline-separated paths to include in the GitHub artifact'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare artifact checksum, dependency SBOM and build identity
+      id: prepare
+      shell: bash
+      env:
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        OVERRIDE: ${{ inputs.artifact-source-path }}
+        PACKAGE_NAME: ${{ inputs.package-name }}
+        SUBJECT_NAME: ${{ inputs.subject-name }}
+        UPLOAD_AWS: ${{ inputs.upload-aws }}
+        # Only whether credentials were passed; the secrets stay out of the script.
+        HAS_AWS_CREDENTIALS: ${{ inputs.aws-role-arn != '' || (inputs.aws-key-id != '' && inputs.aws-secret-access-key != '') }}
+      run: |
+        python3 "${GITHUB_WORKSPACE}/tools/ci/publish/attest_helper.py" prepare \
+          --artifact-name "${ARTIFACT_NAME}" \
+          --override "${OVERRIDE}" \
+          --package-name "${PACKAGE_NAME}" \
+          --subject-name "${SUBJECT_NAME}"
+
+    # Pull request builds aren't released: they skip the SBOM scan and Sigstore attestations.
+    - name: Generate SBOM
+      if: github.event_name != 'pull_request'
+      uses: anchore/sbom-action@v0
+      env:
+        # A 64 MiB gen0 budget (hex) avoids a PowerShell jump-list heap corruption that intermittently
+        # crashes the pwsh extracting syft on windows-11-arm (dotnet/runtime#131636).
+        DOTNET_GCgen0size: '4000000'
+      with:
+        path: ${{ runner.temp }}/build
+        format: spdx-json
+        output-file: ${{ steps.prepare.outputs.sbom-path }}
+        upload-artifact: true
+        upload-artifact-retention: 30
+        artifact-name: sbom-${{ steps.prepare.outputs.subject-name }}
+
+    - name: Attest Build Provenance
+      if: github.event_name != 'pull_request'
+      uses: actions/attest@v4
+      env:
+        NODE_OPTIONS: --max-http-header-size=32768
+      with:
+        subject-path: ${{ steps.prepare.outputs.path }}
+
+    - name: Attest SBOM
+      if: github.event_name != 'pull_request'
+      uses: actions/attest@v4
+      with:
+        subject-path: ${{ steps.prepare.outputs.path }}
+        sbom-path: ${{ steps.prepare.outputs.sbom-path }}
+
+    - name: Attest CPM dependency SBOM
+      if: github.event_name != 'pull_request'
+      uses: actions/attest@v4
+      with:
+        subject-path: ${{ steps.prepare.outputs.path }}
+        sbom-path: ${{ steps.prepare.outputs.dependency-sbom }}
+
+    - name: Save artifact
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.package-name }}
+        path: |
+          ${{ steps.prepare.outputs.path }}
+          ${{ steps.prepare.outputs.checksum }}
+          ${{ steps.prepare.outputs.metadata }}
+          ${{ steps.prepare.outputs.dependency-sbom }}
+          ${{ inputs.additional-artifact-paths }}
+        retention-days: ${{ github.event_name == 'pull_request' && '7' || '30' }}
+        compression-level: 0
+
+    - name: Configure AWS credentials
+      id: aws-credentials
+      if: steps.prepare.outputs.publish-aws == 'true'
+      uses: ./.github/actions/aws-credentials
+      with:
+        aws-role-arn: ${{ inputs.aws-role-arn }}
+        aws-key-id: ${{ inputs.aws-key-id }}
+        aws-secret-access-key: ${{ inputs.aws-secret-access-key }}
+
+    - name: Upload artifact and checksum to AWS
+      if: steps.aws-credentials.outcome == 'success'
+      shell: bash
+      env:
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        ARTIFACT_PATH: ${{ steps.prepare.outputs.path }}
+        CHECKSUM_PATH: ${{ steps.prepare.outputs.checksum }}
+        DISTRIBUTION_ID: ${{ inputs.aws-distribution-id }}
+      run: |
+        python3 "${GITHUB_WORKSPACE}/tools/ci/publish/aws_upload.py" publish \
+          --artifact "${ARTIFACT_PATH}:${ARTIFACT_NAME}" \
+          --artifact "${CHECKSUM_PATH}:${ARTIFACT_NAME}.sha256" \
+          --distribution-id "${DISTRIBUTION_ID}"

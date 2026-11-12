@@ -1,0 +1,31 @@
+name: "QGroundControl CodeQL Config"
+# workflows/codeql.yml analyzes Actions, Java/Kotlin, and Python.
+# C++ is not analyzed by CodeQL; workflows/analysis.yml runs clang-tidy and clazy.
+
+paths:
+  - src
+  - android/src
+  - tools
+  - deploy
+  - test
+  - .github
+
+paths-ignore:
+  - '**/moc_*'
+  - '**/qrc_*'
+  - '**/ui_*'
+  - '**/*_autogen/**'
+  - '**/libs/**'
+  - '**/3rdparty/**'
+  - '**/build/**'
+  # Vendored Android Java sources — upstream libsdl/freedesktop, not ours to fix.
+  - 'android/src/org/libsdl/**'
+  - 'android/src/org/freedesktop/**'
+
+queries:
+  - uses: security-extended
+
+query-filters:
+  - exclude:
+      # Stable release tags are accepted by actions/README.md; zizmor enforces ref-pin.
+      id: actions/unpinned-tag

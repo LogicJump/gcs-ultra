@@ -1,0 +1,104 @@
+name: Install Qt
+description: Install Qt with QGC's installer or aqtinstall, with caching
+outputs:
+  qt_root_dir:
+    description: Absolute Qt root directory
+    value: ${{ steps.qt.outputs.qt_root_dir }}
+  version:
+    description: Installed Qt version
+    value: ${{ steps.plan.outputs.version }}
+  installer:
+    description: Installer that provided Qt (qgc or aqt)
+    value: ${{ steps.plan.outputs.installer }}
+  source:
+    description: Where Qt came from (preinstalled, cache, or installed)
+    value: ${{ steps.qt.outputs.source }}
+inputs:
+  host:
+    description: Host platform (linux, mac, windows, etc.)
+    required: true
+  target:
+    description: Target platform (desktop, android, ios)
+    required: false
+    default: desktop
+  arch:
+    description: Architecture (linux_gcc_64, clang_64, win64_msvc2022_64, etc.)
+    required: true
+  modules:
+    description: Qt modules to install (build-setup passes build-config.json's qt.modules)
+    required: false
+    default: ''
+  archives:
+    description: Optional Qt archives subset to install (space-separated)
+    required: false
+    default: ''
+  export-env:
+    description: Export QT_ROOT_DIR and prepend the Qt bin directory to PATH
+    required: false
+    default: 'true'
+runs:
+  using: composite
+  steps:
+    # Resolves build-config.json's Qt version and the installer (QGC_QT_INSTALLER, else qgc), and
+    # outputs the cache key (whose digest covers the installer) and the workspace-relative arch
+    # tree to cache, a compatible preinstalled SDK root (empty when the runner image has none),
+    # whether to save a fresh install, and the resolved request for `ensure`.
+    - name: Plan Qt install
+      id: plan
+      shell: bash
+      env:
+        PREINSTALLED_DIR: ${{ env.QGC_PREINSTALLED_QT_DIR || '/opt/qgc-sdk' }}
+        QT_HOST: ${{ inputs.host }}
+        QT_TARGET: ${{ inputs.target }}
+        QT_ARCH: ${{ inputs.arch }}
+        QT_MODULES: ${{ inputs.modules }}
+        QT_ARCHIVES: ${{ inputs.archives }}
+        # Pull requests from forks and Copilot sessions (event "dynamic") cannot write the cache.
+        SAVE_ALLOWED: >-
+          ${{ github.event_name != 'dynamic' && (github.event_name != 'pull_request' ||
+              github.event.pull_request.head.repo.full_name == github.repository) }}
+      run: >-
+        python3 "${GITHUB_WORKSPACE}/tools/setup/install_qt.py" plan
+        --outdir "${GITHUB_WORKSPACE}/.qt/Qt" --preinstalled-prefix "${PREINSTALLED_DIR}"
+        --host "${QT_HOST}" --target "${QT_TARGET}" --arch "${QT_ARCH}"
+        --modules "${QT_MODULES}" --archives "${QT_ARCHIVES}" --save-allowed "${SAVE_ALLOWED}"
+
+    # Cache-service failures should degrade to a Qt reinstall.
+    - name: Restore Qt cache
+      id: qt-cache
+      if: steps.plan.outputs.preinstalled_root == ''
+      uses: actions/cache/restore@v6
+      continue-on-error: true
+      with:
+        path: ${{ steps.plan.outputs.cache_path }}
+        key: ${{ steps.plan.outputs.key }}
+
+    - name: Install Qt
+      id: qt
+      shell: bash
+      env:
+        PLAN: ${{ steps.plan.outputs.plan }}
+        CACHE_HIT: ${{ steps.qt-cache.outputs.cache-hit }}
+        EXPORT_ENV: ${{ inputs.export-env }}
+      run: >-
+        python3 "${GITHUB_WORKSPACE}/tools/setup/install_qt.py" ensure --plan "${PLAN}"
+        --cache-hit "${CACHE_HIT}" --export-env "${EXPORT_ENV}"
+
+    - name: Re-check Qt cache before save
+      id: qt-presave
+      if: steps.plan.outputs.save == 'true' && steps.qt-cache.outputs.cache-hit != 'true'
+      uses: actions/cache/restore@v6
+      continue-on-error: true
+      with:
+        path: ${{ steps.plan.outputs.cache_path }}
+        key: ${{ steps.plan.outputs.key }}
+        lookup-only: true
+
+    - name: Save Qt cache
+      if: >-
+        steps.plan.outputs.save == 'true' && steps.qt-cache.outputs.cache-hit != 'true' &&
+        steps.qt-presave.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v6
+      with:
+        path: ${{ steps.plan.outputs.cache_path }}
+        key: ${{ steps.plan.outputs.key }}

@@ -1,0 +1,147 @@
+name: Runner Images
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '23 3 * * 1'
+
+concurrency:
+  group: runner-images
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION || 'us-west-2' }}
+
+jobs:
+  ubuntu24-x64:
+    name: Ubuntu 24 x64
+    if: github.repository_owner == 'mavlink' && (github.event_name != 'schedule' || vars.RUNS_ON_AMI_SUBNET_ID != '')
+    outputs:
+      image: ${{ steps.candidate.outputs.image }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: |
+            .github/actions/aws-credentials
+            .github/build-config.json
+            .github/runner-images
+            tools/ci/runner/runner_image.py
+            tools/_bootstrap.py
+            tools/common
+            tools/qgc_tools
+            tools/setup/read_config.py
+          sparse-checkout-cone-mode: false
+
+      # Images build only from the default branch, with the AMI role and subnet configured.
+      - name: Preflight
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          ROLE_ARN: ${{ secrets.RUNS_ON_AMI_ROLE_ARN }}
+          SUBNET_ID: ${{ vars.RUNS_ON_AMI_SUBNET_ID }}
+        run: python3 tools/ci/runner/runner_image.py preflight
+
+      - name: Configure AWS Credentials
+        uses: ./.github/actions/aws-credentials
+        with:
+          aws-role-arn: ${{ secrets.RUNS_ON_AMI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve build configuration
+        id: build-config
+        run: python3 tools/setup/read_config.py --github-output qt.version qt.modules tools.packer.version
+
+      # The same Packer release as the packer-validate hook.
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@v3
+        with:
+          version: ${{ steps.build-config.outputs.tools_packer_version }}
+
+      - name: Build runner image
+        working-directory: .github/runner-images
+        env:
+          PKR_VAR_aws_region: ${{ env.AWS_REGION }}
+          PKR_VAR_subnet_id: ${{ vars.RUNS_ON_AMI_SUBNET_ID }}
+          PKR_VAR_source_repository: ${{ github.server_url }}/${{ github.repository }}.git
+          PKR_VAR_source_ref: ${{ github.sha }}
+          PKR_VAR_qt_version: ${{ steps.build-config.outputs.qt_version }}
+          PKR_VAR_qt_modules: ${{ steps.build-config.outputs.qt_modules }}
+        run: |
+          packer fmt -check qgc-ubuntu24-x64.pkr.hcl
+          packer init qgc-ubuntu24-x64.pkr.hcl
+          packer validate qgc-ubuntu24-x64.pkr.hcl
+          packer build qgc-ubuntu24-x64.pkr.hcl
+
+      - name: Resolve candidate AMI
+        id: candidate
+        run: python3 tools/ci/runner/runner_image.py manifest --manifest .github/runner-images/packer-manifest.json
+
+      - name: Upload Packer manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: qgc-ubuntu24-x64-packer-manifest
+          path: .github/runner-images/packer-manifest.json
+          if-no-files-found: error
+          retention-days: 30
+
+  smoke-test:
+    name: Smoke Test Ubuntu 24 x64
+    needs: ubuntu24-x64
+    runs-on: ${{ format('runs-on={0}/runner=linux-x64-builder-prebaked/ami={1}', github.run_id, needs.ubuntu24-x64.outputs.image) }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+          sparse-checkout: tools/ci/runner/runner_image.py
+          sparse-checkout-cone-mode: false
+
+      - name: Verify runner image
+        run: python3 tools/ci/runner/runner_image.py verify
+
+  promote:
+    name: Promote verified runner image
+    needs: [ubuntu24-x64, smoke-test]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Configure AWS Credentials
+        uses: ./.github/actions/aws-credentials
+        with:
+          aws-role-arn: ${{ secrets.RUNS_ON_AMI_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Promote and retire expired QGC images
+        env:
+          CANDIDATE_IMAGE: ${{ needs.ubuntu24-x64.outputs.image }}
+        run: |
+          python3 tools/ci/runner/runner_image.py promote --image "$CANDIDATE_IMAGE" --commit "$GITHUB_SHA"
+          python3 tools/ci/runner/runner_image.py cleanup

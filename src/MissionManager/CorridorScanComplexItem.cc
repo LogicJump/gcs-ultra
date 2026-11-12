@@ -1,0 +1,550 @@
+#include "CorridorScanComplexItem.h"
+
+#include <QtCore/QJsonArray>
+
+#include "AppMessages.h"
+#include "AppSettings.h"
+#include "JsonParsing.h"
+#include "PlanMasterController.h"
+#include "QGCApplication.h"
+#include "QGCGeo.h"
+#include "QGCLoggingCategory.h"
+#include "QGCPlanarGeometry.h"
+#include "SettingsManager.h"
+
+QGC_LOGGING_CATEGORY(CorridorScanComplexItemLog, "Plan.CorridorScanComplexItem")
+
+CorridorScanComplexItem::CorridorScanComplexItem(PlanMasterController* masterController, bool flyView, const QString& kmlOrShpFile)
+    : TransectStyleComplexItem  (masterController, flyView, settingsGroup)
+    , _entryPointLocation       (EntryPointDefaultOrder)
+    , _metaDataMap              (FactMetaData::createMapFromJsonFile(QStringLiteral(":/json/CorridorScan.SettingsGroup.json"), this))
+    , _corridorWidthFact        (settingsGroup, _metaDataMap[corridorWidthName])
+{
+    _editorQml = "qrc:/qml/QGroundControl/PlanView/CorridorScanEditor.qml";
+
+    // We override the altitude to the mission default
+    if (_cameraCalc.isManualCamera() || !_cameraCalc.valueSetIsDistance()->rawValue().toBool()) {
+        _cameraCalc.distanceToSurface()->setRawValue(SettingsManager::instance()->appSettings()->defaultMissionItemAltitude()->rawValue());
+    }
+
+    connect(&_corridorWidthFact,    &Fact::rawValueChanged,                         this, &CorridorScanComplexItem::_setDirty);
+    connect(&_corridorPolyline,     &QGCMapPolyline::pathChanged,                   this, &CorridorScanComplexItem::_setDirty);
+
+    connect(&_corridorPolyline,     &QGCMapPolyline::dirtyChanged,                  this, &CorridorScanComplexItem::_polylineDirtyChanged);
+
+    connect(&_corridorPolyline,     &QGCMapPolyline::pathChanged,                   this, &CorridorScanComplexItem::_rebuildCorridorPolygon);
+    connect(&_corridorWidthFact,    &Fact::rawValueChanged,                         this, &CorridorScanComplexItem::_rebuildCorridorPolygon);
+
+    connect(&_corridorPolyline,     &QGCMapPolyline::countChanged,                  this, &CorridorScanComplexItem::_updateSpecifiesCoordinate);
+
+    connect(&_corridorPolyline,     &QGCMapPolyline::isValidChanged,                this, &CorridorScanComplexItem::_updateWizardMode);
+    connect(&_corridorPolyline,     &QGCMapPolyline::traceModeChanged,              this, &CorridorScanComplexItem::_updateWizardMode);
+
+    // Anchor the cache to current state so correctness doesn't depend on constructor ordering
+    _updateSpecifiesCoordinate();
+
+    if (!kmlOrShpFile.isEmpty()) {
+        _corridorPolyline.loadKMLOrSHPFile(kmlOrShpFile);
+        _corridorPolyline.setDirty(false);
+    }
+    setDirty(false);
+}
+
+void CorridorScanComplexItem::save(QJsonArray&  planItems)
+{
+    QJsonObject saveObject;
+
+    _saveCommon(saveObject);
+    planItems.append(saveObject);
+}
+
+void CorridorScanComplexItem::savePreset(const QString& presetName)
+{
+    QJsonObject saveObject;
+
+    _saveCommon(saveObject);
+    _savePresetJson(presetName, saveObject);
+}
+
+void CorridorScanComplexItem::_saveCommon(QJsonObject& saveObject)
+{
+    TransectStyleComplexItem::_save(saveObject);
+
+    saveObject[JsonParsing::jsonVersionKey] =                    2;
+    saveObject[VisualMissionItem::jsonTypeKey] =                VisualMissionItem::jsonTypeComplexItemValue;
+    saveObject[ComplexMissionItem::jsonComplexItemTypeKey] =    jsonComplexItemTypeValue;
+    saveObject[corridorWidthName] =                             _corridorWidthFact.rawValue().toDouble();
+    saveObject[_jsonEntryPointKey] =                            static_cast<int>(_entryPointLocation);
+
+    _corridorPolyline.saveToJson(saveObject);
+}
+
+void CorridorScanComplexItem::loadPreset(const QString& presetName)
+{
+    QString errorString;
+
+    QJsonObject presetObject = _loadPresetJson(presetName);
+    if (!_loadWorker(presetObject, 0, errorString, true /* forPresets */)) {
+        QGC::showAppMessage(tr("Internal Error: Preset load failed. Name: %1 Error: %2").arg(presetName).arg(errorString));
+    }
+    _rebuildTransects();
+}
+
+bool CorridorScanComplexItem::_loadWorker(const QJsonObject& complexObject, int sequenceNumber, QString& errorString, bool forPresets)
+{
+    _ignoreRecalc = !forPresets;
+
+    QList<JsonParsing::KeyValidateInfo> keyInfoList = {
+        { JsonParsing::jsonVersionKey,                   QJsonValue::Double, true },
+        { VisualMissionItem::jsonTypeKey,               QJsonValue::String, true },
+        { ComplexMissionItem::jsonComplexItemTypeKey,   QJsonValue::String, true },
+        { corridorWidthName,                            QJsonValue::Double, true },
+        { _jsonEntryPointKey,                           QJsonValue::Double, true },
+        { QGCMapPolyline::jsonPolylineKey,              QJsonValue::Array,  true },
+    };
+    if (!JsonParsing::validateKeys(complexObject, keyInfoList, errorString)) {
+        _ignoreRecalc = false;
+        return false;
+    }
+
+    QString itemType = complexObject[VisualMissionItem::jsonTypeKey].toString();
+    QString complexType = complexObject[ComplexMissionItem::jsonComplexItemTypeKey].toString();
+    if (itemType != VisualMissionItem::jsonTypeComplexItemValue || complexType != jsonComplexItemTypeValue) {
+        errorString = tr("%1 does not support loading this complex mission item type: %2:%3").arg(qgcApp()->applicationName()).arg(itemType).arg(complexType);
+        _ignoreRecalc = false;
+        return false;
+    }
+
+    int version = complexObject[JsonParsing::jsonVersionKey].toInt();
+    if (version != 2) {
+        errorString = tr("%1 complex item version %2 not supported").arg(jsonComplexItemTypeValue).arg(version);
+        _ignoreRecalc = false;
+        return false;
+    }
+
+    if (!forPresets) {
+        if (!_corridorPolyline.loadFromJson(complexObject, true, errorString)) {
+            _ignoreRecalc = false;
+            return false;
+        }
+    }
+
+    setSequenceNumber(sequenceNumber);
+
+    if (!_load(complexObject, forPresets, errorString)) {
+        _ignoreRecalc = false;
+        return false;
+    }
+
+    _corridorWidthFact.setRawValue(complexObject[corridorWidthName].toDouble());
+
+    _entryPointLocation = static_cast<EntryPointLocation>(complexObject[_jsonEntryPointKey].toInt());
+
+    _ignoreRecalc = false;
+
+    _recalcComplexDistance();
+    if (_cameraShots == 0) {
+        // Shot count was possibly not available from plan file
+        _recalcCameraShots();
+    }
+
+    return true;
+}
+
+bool CorridorScanComplexItem::load(const QJsonObject& complexObject, int sequenceNumber, QString& errorString)
+{
+    return _loadWorker(complexObject, sequenceNumber, errorString, false /* forPresets */);
+}
+
+bool CorridorScanComplexItem::specifiesCoordinate(void) const
+{
+    return _corridorPolyline.count() > 1;
+}
+
+// specifiesCoordinate() depends on polyline count, so the NOTIFY signal must be emitted when it flips
+void CorridorScanComplexItem::_updateSpecifiesCoordinate(void)
+{
+    const bool newSpecifiesCoordinate = specifiesCoordinate();
+    if (newSpecifiesCoordinate != _specifiesCoordinate) {
+        _specifiesCoordinate = newSpecifiesCoordinate;
+        emit specifiesCoordinateChanged();
+    }
+}
+
+void CorridorScanComplexItem::setCoordinate(const QGeoCoordinate& coordinate)
+{
+    if (!coordinate.isValid() || !_entryCoordinate.isValid() || _corridorPolyline.count() < 2) {
+        return;
+    }
+
+    const double distanceMeters = _entryCoordinate.distanceTo(coordinate);
+    const double azimuthDegrees = _entryCoordinate.azimuthTo(coordinate);
+    const QList<QGeoCoordinate> vertices = _corridorPolyline.coordinateList();
+
+    QList<QGeoCoordinate> translatedVertices;
+    translatedVertices.reserve(vertices.count());
+    for (const QGeoCoordinate& vertex: vertices) {
+        translatedVertices.append(vertex.atDistanceAndAzimuth(distanceMeters, azimuthDegrees));
+    }
+
+    _corridorPolyline.setPath(translatedVertices);
+}
+
+int CorridorScanComplexItem::_calcTransectCount(void) const
+{
+    double fullWidth = _corridorWidthFact.rawValue().toDouble();
+    if (fullWidth <= 0.0) {
+        return 1;
+    }
+    const double spacing = _calcTransectSpacing();
+    return spacing > 0.0 ? qMin(qCeil(fullWidth / spacing), maxTransectCount) : 1;
+}
+
+void CorridorScanComplexItem::_polylineDirtyChanged(bool dirty)
+{
+    if (dirty) {
+        setDirty(true);
+    }
+}
+
+void CorridorScanComplexItem::rotateEntryPoint(void)
+{
+    int modeAsInt = static_cast<int>(_entryPointLocation);
+
+    if (_calcTransectCount() < 2) {
+        // A single transect has no "opposite side of center" so we need to bump by 2 to get to the opposite end of the scan
+        modeAsInt += 2;
+    } else {
+        modeAsInt++;
+    }
+
+    if (modeAsInt > EntryPointStartOppositeEndOppositeSide) {
+        modeAsInt = 0;
+    }
+
+    _entryPointLocation = static_cast<EntryPointLocation>(modeAsInt);
+
+    _rebuildTransects();
+}
+
+void CorridorScanComplexItem::_rebuildCorridorPolygon(void)
+{
+    _surveyAreaPolygon.clear();
+    _corridorBoundaryRings.clear();
+    _corridorBoundaryPaths.clear();
+    _buildCorridorArea();
+    emit corridorBoundariesChanged();
+}
+
+void CorridorScanComplexItem::_buildCorridorArea(void)
+{
+    if (_corridorPolyline.count() < 2) {
+        return;
+    }
+
+    const double halfWidth = _corridorWidthFact.rawValue().toDouble() / 2.0;
+    if (halfWidth < 0.0) {
+        return;
+    }
+    if (qFuzzyIsNull(halfWidth)) {
+        // Single pass corridor: the area is the path out and back, which keeps the polygon valid for save
+        QList<QGeoCoordinate> coordinates = _corridorPolyline.coordinateList();
+        QVariantList path;
+        for (const QGeoCoordinate& coordinate : coordinates) {
+            path.append(QVariant::fromValue(coordinate));
+        }
+        _corridorBoundaryPaths.append(QVariant(path));
+
+        const QList<QGeoCoordinate> returnPath(coordinates.crbegin(), coordinates.crend());
+        coordinates.append(returnPath);
+        _surveyAreaPolygon.appendVertices(coordinates);
+        return;
+    }
+
+    const QList<QPolygonF> contours = QGCPlanarGeometry::bufferPolyline(_corridorPolyline.nedPolyline(), halfWidth);
+    if (contours.isEmpty()) {
+        qCWarning(CorridorScanComplexItemLog) << "Unable to build corridor buffer";
+        return;
+    }
+
+    const QGeoCoordinate tangentOrigin = _corridorPolyline.vertexCoordinate(0);
+    const auto toGeo = [&tangentOrigin](const QPolygonF& planar) {
+        QList<QGeoCoordinate> coordinates;
+        coordinates.reserve(planar.size());
+        for (const QPointF& point : planar) {
+            QGeoCoordinate coordinate;
+            QGCGeo::convertNedToGeo(point.y(), point.x(), 0.0, tangentOrigin, coordinate);
+            coordinates.append(coordinate);
+        }
+        return coordinates;
+    };
+
+    for (const QPolygonF& contour : contours) {
+        const QList<QGeoCoordinate> ring = toGeo(contour);
+        _corridorBoundaryRings.append(ring);
+
+        QVariantList path;
+        for (const QGeoCoordinate& coordinate : ring) {
+            path.append(QVariant::fromValue(coordinate));
+        }
+        path.append(QVariant::fromValue(ring.first()));
+        _corridorBoundaryPaths.append(QVariant(path));
+    }
+
+    // Holes are joined into the outer boundary with zero-width bridges so the area polygon fills correctly
+    _surveyAreaPolygon.appendVertices(toGeo(QGCPlanarGeometry::joinContours(contours)));
+}
+
+QList<QList<QGeoCoordinate>> CorridorScanComplexItem::_surveyAreaBoundaries(void) const
+{
+    return _corridorBoundaryRings.isEmpty() ? TransectStyleComplexItem::_surveyAreaBoundaries()
+                                            : _corridorBoundaryRings;
+}
+
+void CorridorScanComplexItem::_rebuildTransectsPhase1(void)
+{
+    if (_ignoreRecalc) {
+        return;
+    }
+
+    // If the transects are getting rebuilt then any previsouly loaded mission items are now invalid
+    if (_loadedMissionItemsParent) {
+        _loadedMissionItems.clear();
+        _loadedMissionItemsParent->deleteLater();
+        _loadedMissionItemsParent = nullptr;
+    }
+
+    double transectSpacing = _calcTransectSpacing();
+    double fullWidth = _corridorWidthFact.rawValue().toDouble();
+    double halfWidth = fullWidth / 2.0;
+    int transectCount = _calcTransectCount();
+    double normalizedTransectPosition = transectSpacing / 2.0;
+
+    if (_corridorPolyline.count() >= 2) {
+        // First build up the transects all going the same direction
+        //qDebug() << "_rebuildTransectsPhase1";
+        for (int i=0; i<transectCount; i++) {
+            //qDebug() << "start transect";
+            double offsetDistance;
+            if (transectCount == 1) {
+                // Single transect is flown over scan line
+                offsetDistance = 0;
+            } else {
+                // Convert from normalized to absolute transect offset distance
+                offsetDistance = halfWidth - normalizedTransectPosition;
+            }
+
+            // Turn transect into CoordInfo transect
+            QList<TransectStyleComplexItem::CoordInfo_t> transect;
+            QList<QGeoCoordinate> transectCoords = _corridorPolyline.offsetPolyline(offsetDistance);
+            if (transectCoords.count() < 2) {
+                qCWarning(CorridorScanComplexItemLog) << "Unable to offset corridor transect";
+                normalizedTransectPosition += transectSpacing;
+                continue;
+            }
+            for (int j=1; j<transectCoords.count() - 1; j++) {
+                TransectStyleComplexItem::CoordInfo_t coordInfo = { transectCoords[j], CoordTypeInterior };
+                transect.append(coordInfo);
+            }
+            TransectStyleComplexItem::CoordInfo_t coordInfo = { transectCoords.first(), CoordTypeSurveyEntry };
+            transect.prepend(coordInfo);
+            coordInfo = { transectCoords.last(), CoordTypeSurveyExit };
+            transect.append(coordInfo);
+
+            // Extend the transect ends for turnaround
+            if (_hasTurnaround()) {
+                QGeoCoordinate turnaroundCoord;
+                double turnAroundDistance = _turnAroundDistanceFact.rawValue().toDouble();
+
+                double azimuth = transectCoords[0].azimuthTo(transectCoords[1]);
+                turnaroundCoord = transectCoords[0].atDistanceAndAzimuth(-turnAroundDistance, azimuth);
+                turnaroundCoord.setAltitude(qQNaN());
+                TransectStyleComplexItem::CoordInfo_t turnaroundCoordInfo = { turnaroundCoord, CoordTypeTurnaround };
+                transect.prepend(turnaroundCoordInfo);
+
+                azimuth = transectCoords.last().azimuthTo(transectCoords[transectCoords.count() - 2]);
+                turnaroundCoord = transectCoords.last().atDistanceAndAzimuth(-turnAroundDistance, azimuth);
+                turnaroundCoord.setAltitude(qQNaN());
+                coordInfo = { turnaroundCoord, CoordTypeTurnaround };
+                transect.append(coordInfo);
+            }
+
+#if 0
+            qDebug() << "transect debug";
+            for (const TransectStyleComplexItem::CoordInfo_t& coordInfo: transect) {
+                qDebug() << coordInfo.coordType;
+            }
+#endif
+
+            _transects.append(transect);
+            normalizedTransectPosition += transectSpacing;
+        }
+
+        // Now deal with fixing up the entry point:
+        //  0: Leave alone
+        //  1: Start at same end, opposite side of center
+        //  2: Start at opposite end, same side
+        //  3: Start at opposite end, opposite side
+
+        bool reverseTransects = false;
+        bool reverseVertices = false;
+        switch (_entryPointLocation) {
+        case EntryPointDefaultOrder:
+            reverseTransects = false;
+            reverseVertices = false;
+            break;
+        case EntryPointStartSameEndOppositeSide:
+            reverseTransects = true;
+            reverseVertices = false;
+            break;
+        case EntryPointStartOppositeEndSameSide:
+            reverseTransects = false;
+            reverseVertices = true;
+            break;
+        case EntryPointStartOppositeEndOppositeSide:
+            reverseTransects = true;
+            reverseVertices = true;
+            break;
+        }
+        if (reverseTransects) {
+            QList<QList<TransectStyleComplexItem::CoordInfo_t>> reversedTransects;
+            for (const QList<TransectStyleComplexItem::CoordInfo_t>& transect: _transects) {
+                reversedTransects.prepend(transect);
+            }
+            _transects = reversedTransects;
+        }
+        if (reverseVertices) {
+            for (int i=0; i<_transects.count(); i++) {
+                QList<TransectStyleComplexItem::CoordInfo_t> reversedVertices;
+                for (TransectStyleComplexItem::CoordInfo_t vertex : _transects[i]) {
+                    // Entry and exit follow the direction of travel, which camera triggering relies on
+                    if (vertex.coordType == CoordTypeSurveyEntry) {
+                        vertex.coordType = CoordTypeSurveyExit;
+                    } else if (vertex.coordType == CoordTypeSurveyExit) {
+                        vertex.coordType = CoordTypeSurveyEntry;
+                    }
+                    reversedVertices.prepend(vertex);
+                }
+                _transects[i] = reversedVertices;
+            }
+        }
+
+        // Adjust to lawnmower pattern
+        reverseVertices = false;
+        for (int i=0; i<_transects.count(); i++) {
+            // We must reverse the vertices for every other transect in order to make a lawnmower pattern
+            QList<TransectStyleComplexItem::CoordInfo_t> transectVertices = _transects[i];
+            if (reverseVertices) {
+                reverseVertices = false;
+                QList<TransectStyleComplexItem::CoordInfo_t> reversedVertices;
+                for (int j=transectVertices.count()-1; j>=0; j--) {
+                    reversedVertices.append(transectVertices[j]);
+
+                    // as we are flying the transect reversed, we also need to swap entry and exit coordinate types
+                    if (reversedVertices.last().coordType == CoordTypeSurveyEntry) {
+                        reversedVertices.last().coordType = CoordTypeSurveyExit;
+                    } else if (reversedVertices.last().coordType == CoordTypeSurveyExit) {
+                        reversedVertices.last().coordType = CoordTypeSurveyEntry;
+                    }
+                }
+
+                transectVertices = reversedVertices;
+            } else {
+                reverseVertices = true;
+            }
+            _transects[i] = transectVertices;
+        }
+    }
+
+    // A corridor whose transects all fail to generate would otherwise save and upload without any scan
+    const bool noTransects = (_corridorPolyline.count() >= 2) && _transects.isEmpty();
+    if (noTransects != _noTransects) {
+        _noTransects = noTransects;
+        if (_noTransects) {
+            QGC::showAppMessage(tr("Corridor Scan: Unable to calculate transects for the corridor path."));
+        }
+        emit readyForSaveStateChanged();
+    }
+}
+
+void CorridorScanComplexItem::_recalcCameraShots(void)
+{
+    double triggerDistance = _cameraCalc.adjustedFootprintFrontal()->rawValue().toDouble();
+    if (triggerDistance == 0) {
+        _cameraShots = 0;
+    } else {
+        if (_cameraTriggerInTurnAroundFact.rawValue().toBool()) {
+            _cameraShots = qCeil(_complexDistance / triggerDistance);
+        } else if (_loadedMissionItemsParent) {
+            // Loaded mission items have no transects until rebuilt, so estimate from the corridor path
+            int singleTransectImageCount = _distanceTriggerImageCount(_corridorPolyline.length(), triggerDistance);
+            _cameraShots = singleTransectImageCount * _calcTransectCount();
+        } else {
+            // Images are taken along the path flown between the survey entry and exit
+            const auto cameraPathLength = [](const QList<CoordInfo_t>& transect) {
+                qsizetype entryIndex = -1;
+                qsizetype exitIndex = -1;
+                for (qsizetype i = 0; i < transect.count(); i++) {
+                    if (transect[i].coordType == CoordTypeSurveyEntry) {
+                        entryIndex = i;
+                    } else if (transect[i].coordType == CoordTypeSurveyExit) {
+                        exitIndex = i;
+                    }
+                }
+                double length = 0;
+                if (entryIndex >= 0 && exitIndex >= 0) {
+                    for (qsizetype i = qMin(entryIndex, exitIndex) + 1; i <= qMax(entryIndex, exitIndex); i++) {
+                        length += transect[i - 1].coord.distanceTo(transect[i].coord);
+                    }
+                }
+                return length;
+            };
+
+            // Passes which could not be offset are not flown, and offset passes differ in length from the path
+            _cameraShots = 0;
+            for (const QList<CoordInfo_t>& transect : _transects) {
+                _cameraShots += _distanceTriggerImageCount(cameraPathLength(transect), triggerDistance);
+            }
+        }
+    }
+    emit cameraShotsChanged();
+}
+
+CorridorScanComplexItem::ReadyForSaveState CorridorScanComplexItem::readyForSaveState(void) const
+{
+    return _noTransects ? NotReadyForSaveData : TransectStyleComplexItem::readyForSaveState();
+}
+
+double CorridorScanComplexItem::timeBetweenShots(void)
+{
+    return _vehicleSpeed == 0 ? 0 : _cameraCalc.adjustedFootprintFrontal()->rawValue().toDouble() / _vehicleSpeed;
+}
+
+double CorridorScanComplexItem::_calcTransectSpacing(void) const
+{
+    double transectSpacing = _cameraCalc.adjustedFootprintSide()->rawValue().toDouble();
+    if (transectSpacing <= 0) {
+        return 0;
+    }
+
+    // Cap spacing so the corridor never generates more than maxTransectCount transects.
+    // The relevant extent is the corridor width (transects run perpendicular to the path).
+    const double corridorWidth = _corridorWidthFact.rawValue().toDouble();
+    if (corridorWidth <= 0.0) {
+        qCWarning(CorridorScanComplexItemLog) << "Corridor width" << corridorWidth << "is invalid, skipping transect count cap";
+        return transectSpacing;
+    }
+    if (transectSpacing < corridorWidth / maxTransectCount) {
+        qCWarning(CorridorScanComplexItemLog) << "Transect spacing" << transectSpacing << "raised to" << corridorWidth / maxTransectCount << "to limit transect count to" << maxTransectCount;
+        transectSpacing = corridorWidth / maxTransectCount;
+    }
+
+    return transectSpacing;
+}
+
+void CorridorScanComplexItem::_updateWizardMode(void)
+{
+    if (_corridorPolyline.isValid() && !_corridorPolyline.traceMode()) {
+        setWizardMode(false);
+    }
+}

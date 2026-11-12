@@ -1,0 +1,221 @@
+name: Caching
+description: Setup Caching
+inputs:
+  host:
+    description: Host OS
+    required: true
+  target:
+    description: Target OS
+    required: true
+  build-type:
+    description: Build Type
+    required: true
+  variant:
+    description: Optional discriminator (e.g. coverage|asan) — distinct compile flags must not share a ccache key.
+    required: false
+    default: ''
+  key-suffix:
+    description: >-
+      Optional per-job discriminator for build caches. Required when multiple
+      matrix legs share the same host/target/build-type.
+    required: false
+    default: ''
+  install-tools:
+    description: Install host compiler-cache/linker tools and reset host ccache stats (false for container builds)
+    required: false
+    default: 'true'
+  save-cache:
+    description: "Whether to save cache (auto = save including PR merge refs; skip pull_request_target)"
+    required: false
+    default: 'auto'
+# Restore results for the job summary: artifact (compiler and moc snapshots), true (exact key),
+# false (restore-key match), or empty (miss, or not used).
+outputs:
+  compiler-cache:
+    description: Compiler (ccache) cache restore result
+    value: ${{ steps.artifact-cache.outputs.restored == 'true' && 'artifact' || steps.ccache.outputs.cache-hit }}
+  moc-cache:
+    description: moc cache restore result
+    value: ${{ steps.artifact-cache.outputs.restored == 'true' && 'artifact' || steps.moccache.outputs.cache-hit }}
+  compiler-cache-key:
+    description: Key the compiler (ccache) cache was restored from, the primary key or a restore-keys match
+    value: ${{ steps.ccache.outputs.cache-matched-key }}
+  moc-cache-key:
+    description: Key the moc cache was restored from, the primary key or a restore-keys match
+    value: ${{ steps.moccache.outputs.cache-matched-key }}
+  cpm-cache:
+    description: CPM source cache restore result
+    value: ${{ steps.cpm-shared.outputs.cache-hit == 'true' && 'true' || steps.cpm-save.outputs.cache-hit || steps.cpm-restore.outputs.cache-hit }}
+  gstreamer-cache:
+    description: GStreamer SDK cache restore result
+    value: ${{ steps.gst-save.outputs.cache-hit || steps.gst-restore.outputs.cache-hit }}
+  gstreamer-mode:
+    description: GStreamer SDK cache mode (save, restore, or empty when the build uses no SDK cache)
+    value: ${{ steps.plan.outputs.gst_mode }}
+runs:
+  using: composite
+  steps:
+    # One process resolves the save policy, cache scope, keys and cache environment; the
+    # steps below only install tools and restore or save what it selected. It also picks
+    # the compiler cache: the job's QGC_COMPILER_CACHE=sccache selects the RunsOn sccache
+    # pilot when runs-on/action exported its S3 bucket (QGC_COMPILER_CACHE_TOOL).
+    - name: Plan caches
+      id: plan
+      shell: bash
+      env:
+        INPUT_HOST: ${{ inputs.host }}
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_BUILD_TYPE: ${{ inputs.build-type }}
+        INPUT_VARIANT: ${{ inputs.variant }}
+        INPUT_KEY_SUFFIX: ${{ inputs.key-suffix }}
+        INPUT_SAVE_CACHE: ${{ inputs.save-cache }}
+        PR_NUMBER: ${{ github.event.pull_request.number }}
+        COMPILER_CACHE_HASH: ${{ hashFiles('.github/build-config.json', 'tools/configs/ccache.conf') }}
+        MOC_CACHE_HASH: ${{ hashFiles('.github/build-config.json', 'cmake/Helpers.cmake', 'tools/moccache/*.py', 'tools/moccache_launcher.py') }}
+        GST_SDK_FILES_HASH: ${{ hashFiles('cmake/GStreamer/Packages.cmake', 'cmake/GStreamer/Acquire.cmake', 'cmake/GStreamer/acquire/*.cmake') }}
+      run: python3 "${GITHUB_WORKSPACE}/tools/ci/cache/cache_plan.py"
+
+    # Pinned ccache for the runner's OS and architecture, plus mold on Linux and, for the
+    # sccache pilot, sccache as the compiler launcher; macOS and Windows install under
+    # RUNNER_TEMP and add it to PATH.
+    - name: Install compiler tools
+      if: inputs.install-tools == 'true'
+      shell: bash
+      run: python3 "${GITHUB_WORKSPACE}/tools/ci/cache/ccache_helper.py" install
+
+    - name: Restore compiler cache artifact
+      id: artifact-cache
+      if: env.QGC_BUILD_CACHE_ARTIFACT == 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: python3 tools/ci/cache/build_cache_artifact.py restore
+
+    # The dependency cache remains a migration/default-branch fallback. RunsOn
+    # redirects these actions to S3 and keeps using its existing storage route.
+    - name: Restore Build Cache (ccache)
+      id: ccache
+      if: steps.artifact-cache.outputs.restored != 'true' && env.QGC_COMPILER_CACHE_TOOL == 'ccache'
+      uses: actions/cache/restore@v6
+      with:
+        path: .cache/ccache
+        key: ${{ steps.plan.outputs.ccache_key }}
+        restore-keys: ${{ steps.plan.outputs.ccache_restore_keys }}
+
+    # moccache entries are content-addressed and basedir-normalized, so they
+    # are safe to share across build types and branches; keys exist only for
+    # platform scoping, implementation versioning, and eviction.
+    #
+    # The saved key ends in build type + variant + key-suffix + run id + attempt so every saving job
+    # (including matrix legs sharing host/target and re-run attempts) writes a
+    # fresh cache (an exact-key hit would otherwise freeze the cache: new
+    # entries from jobs like linux-emulator or custom builds would never be
+    # saved back). Lookups go through the restore-keys prefixes, and each save
+    # includes the restored entries, so caches converge over successive runs.
+    # MOCCACHE_MAX_SIZE (set by the launcher) bounds growth via LRU trim.
+    - name: Restore moc output (moccache)
+      id: moccache
+      if: steps.artifact-cache.outputs.restored != 'true'
+      uses: actions/cache/restore@v6
+      with:
+        path: .cache/moccache
+        key: ${{ steps.plan.outputs.moccache_key }}
+        restore-keys: ${{ steps.plan.outputs.moccache_restore_keys }}
+
+    # Restored caches carry the previous run's statistics; reset them so the
+    # build summary and the PR save gate count this job's hits and misses. The
+    # sccache server starts with the first compile, and with empty statistics.
+    - name: Reset cache statistics
+      shell: bash
+      env:
+        RESET_CCACHE: ${{ inputs.install-tools == 'true' && env.QGC_COMPILER_CACHE_TOOL == 'ccache' }}
+        MOCCACHE_DIR: ${{ github.workspace }}/.cache/moccache
+      run: |
+        if [[ "${RESET_CCACHE}" == true ]]; then
+          ccache -z
+        fi
+        python3 "${GITHUB_WORKSPACE}/tools/moccache_launcher.py" --zero-stats
+
+    # SDK payloads change independently of source declarations and are large.
+    # Keep them out of the CPM archive and reuse an immutable SDK cache.
+    # Only Windows, Android and iOS builds download one; desktop Linux and
+    # macOS use the system GStreamer. The key covers what selects, fetches
+    # and extracts the SDK (the build-config.json gstreamer section, not the
+    # whole file, and cmake/GStreamer/{Packages,Acquire}.cmake), so other
+    # GStreamer CMake edits keep it. Only the extracted
+    # trees are cached: configure uses a tree stamped with the pinned
+    # checksums without its downloaded archive. actions/cache archives a
+    # matched directory whole, so the paths match each SDK directory's entries
+    # for the exclusions to apply.
+    - name: Cache GStreamer SDK (restore and save)
+      id: gst-save
+      if: steps.plan.outputs.gst_mode == 'save'
+      uses: actions/cache@v6
+      with:
+        path: |
+          ${{ env.CPM_CACHE_PATH }}/gstreamer*/*
+          !${{ env.CPM_CACHE_PATH }}/gstreamer*/*.tar.xz
+          !${{ env.CPM_CACHE_PATH }}/gstreamer*/*.exe
+          !${{ env.CPM_CACHE_PATH }}/gstreamer*/*.pkg
+        key: ${{ steps.plan.outputs.gst_key }}
+
+    - name: Cache GStreamer SDK (restore only)
+      id: gst-restore
+      if: steps.plan.outputs.gst_mode == 'restore'
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          ${{ env.CPM_CACHE_PATH }}/gstreamer*/*
+          !${{ env.CPM_CACHE_PATH }}/gstreamer*/*.tar.xz
+          !${{ env.CPM_CACHE_PATH }}/gstreamer*/*.exe
+          !${{ env.CPM_CACHE_PATH }}/gstreamer*/*.pkg
+        key: ${{ steps.plan.outputs.gst_key }}
+
+    # Release populates immutable dependency snapshots. Debug jobs can also
+    # restore the ordinary platform sources when their custom cache is absent.
+    # PRs and branches read default-branch caches; when that snapshot already has
+    # this fingerprint, restore it exactly instead of saving a duplicate scoped copy
+    # that would evict shared caches. Scoped restore-keys could match an older
+    # scoped snapshot first, so this step has none. PRs on GitHub storage never save
+    # a scoped copy (cpm_mode is restore) and fall back to the newest default-branch snapshot.
+    - name: Restore default-branch CPM snapshot
+      id: cpm-shared
+      if: steps.plan.outputs.cpm_shared_probe == 'true'
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          ${{ env.CPM_CACHE_PATH }}/*
+          !${{ env.CPM_CACHE_PATH }}/gstreamer*
+        key: ${{ steps.plan.outputs.cpm_shared_key }}
+
+    - name: Cache CPM Modules (restore and save)
+      id: cpm-save
+      if: steps.plan.outputs.cpm_mode == 'save' && steps.cpm-shared.outputs.cache-hit != 'true'
+      uses: actions/cache@v6
+      with:
+        # Nested composite step outputs are unavailable during post-job saves.
+        path: |
+          ${{ env.CPM_CACHE_PATH }}/*
+          !${{ env.CPM_CACHE_PATH }}/gstreamer*
+        key: ${{ steps.plan.outputs.cpm_key }}
+        restore-keys: ${{ steps.plan.outputs.cpm_restore_keys }}
+
+    - name: Cache CPM Modules (restore only)
+      id: cpm-restore
+      if: steps.plan.outputs.cpm_mode == 'restore' && steps.cpm-shared.outputs.cache-hit != 'true'
+      uses: actions/cache/restore@v6
+      with:
+        path: |
+          ${{ env.CPM_CACHE_PATH }}/*
+          !${{ env.CPM_CACHE_PATH }}/gstreamer*
+        key: ${{ steps.plan.outputs.cpm_key }}
+        restore-keys: ${{ steps.plan.outputs.cpm_restore_keys }}
+
+    - name: Seed an empty CPM cache from the runner image
+      if: env.QGC_PREINSTALLED_CPM_DIR != ''
+      shell: bash
+      run: >-
+        python3 "${GITHUB_WORKSPACE}/tools/ci/cache/cpm_helper.py" seed-cache
+        --root "${GITHUB_WORKSPACE}" --path "${CPM_SOURCE_CACHE}"
+        --seed "${QGC_PREINSTALLED_CPM_DIR}"

@@ -1,0 +1,26 @@
+{
+  "venvPath": "tools",
+  "venv": ".venv",
+  "exclude": [
+    "build",
+    "**/__pycache__",
+    "**/.venv",
+    "**/node_modules"
+  ],
+  "include": [
+    "tools/**/*.py",
+    "test/**/*.py",
+    ".github/runner-images/**/*.py",
+    "deploy/**/*.py",
+    ".clusterfuzzlite/**/*.py"
+  ],
+  "extraPaths": [
+    "tools"
+  ],
+  "pythonVersion": "3.10",
+  "reportMissingImports": "warning",
+  "reportMissingTypeStubs": false,
+  "reportUnusedImport": "warning",
+  "reportUnusedVariable": "warning",
+  "typeCheckingMode": "standard"
+}

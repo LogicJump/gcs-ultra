@@ -1,0 +1,72 @@
+import QtQuick
+
+// Used to manage state for itesm using with QGCPipOveral
+Item {
+    id:     control
+    state:  initState
+
+    readonly property string initState:             "init"
+    readonly property string pipState:              "pip"
+    readonly property string fullState:             "full"
+    readonly property string windowState:           "window"
+
+    property var  pipView           // PipView control
+    property bool isDark:   true    // true: Use dark overlay visuals
+
+    property var _viewControl: control.parent
+
+    states: [
+        State {
+            name: pipState
+
+            AnchorChanges {
+                target:         _viewControl
+                anchors.top:    pipView._pipContentItem.top
+                anchors.bottom: pipView._pipContentItem.bottom
+                anchors.left:   pipView._pipContentItem.left
+                anchors.right:  pipView._pipContentItem.right
+            }
+
+            ParentChange {
+                target: _viewControl
+                parent: pipView._pipContentItem
+            }
+        },
+        State {
+            name: fullState
+
+            AnchorChanges {
+                target:         _viewControl
+                anchors.top:    pipView.parent.top
+                anchors.bottom: pipView.parent.bottom
+                anchors.left:   pipView.parent.left
+                anchors.right:  pipView.parent.right
+            }
+
+            ParentChange {
+                target: _viewControl
+                parent: pipView.parent
+            }
+        },
+        State {
+            name: windowState
+
+            AnchorChanges {
+                target:         _viewControl
+                anchors.top:    pipView._windowContentItem.top
+                anchors.bottom: pipView._windowContentItem.bottom
+                anchors.left:   pipView._windowContentItem.left
+                anchors.right:  pipView._windowContentItem.right
+            }
+
+            ParentChange {
+                target: _viewControl
+                parent: pipView._windowContentItem
+            }
+
+            StateChangeScript {
+                script: pipView.showWindow()
+            }
+        }
+    ]
+}

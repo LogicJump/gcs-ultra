@@ -1,0 +1,52 @@
+name: Test Phase
+description: Run unit and integration suites and preserve results after failures
+inputs:
+  build-dir:
+    default: ${{ runner.temp }}/build
+    description: Configured and successfully built test directory
+  suite:
+    required: true
+    description: Unique suite name used in artifacts and reports
+  integration-parallel:
+    default: '2'
+    description: Integration test parallelism (auto uses one process per CPU); CTest resource locks remain enforced
+  exclude-labels:
+    default: 'Flaky|Network'
+    description: Excluded CTest labels for both suites
+  upload-codecov:
+    default: 'false'
+    description: Enable informational Codecov test analytics
+runs:
+  using: composite
+  steps:
+    - name: Run Unit Tests (parallel)
+      uses: ./.github/actions/run-unit-tests
+      with:
+        build-dir: ${{ inputs.build-dir }}
+        junit-output: junit-results-${{ inputs.suite }}-unit.xml
+        ctest-output: test-output-${{ inputs.suite }}-unit.txt
+        include-labels: 'Unit'
+        exclude-labels: ${{ inputs.exclude-labels }}
+        report-name: Unit Tests (${{ inputs.suite }})
+        artifact-name: test-results-${{ inputs.suite }}-unit
+        retention-days: 7
+        duration-report: 'true'
+        upload-codecov: ${{ inputs.upload-codecov }}
+        codecov-flags: ${{ inputs.suite }}-unit
+
+    - name: Run Integration Tests
+      if: ${{ !cancelled() }}
+      uses: ./.github/actions/run-unit-tests
+      with:
+        build-dir: ${{ inputs.build-dir }}
+        junit-output: junit-results-${{ inputs.suite }}-integration.xml
+        ctest-output: test-output-${{ inputs.suite }}-integration.txt
+        include-labels: 'Integration'
+        exclude-labels: ${{ inputs.exclude-labels }}
+        parallel: ${{ inputs.integration-parallel }}
+        report-name: Integration Tests (${{ inputs.suite }})
+        artifact-name: test-results-${{ inputs.suite }}-integration
+        retention-days: 7
+        duration-report: 'true'
+        upload-codecov: ${{ inputs.upload-codecov }}
+        codecov-flags: ${{ inputs.suite }}-integration

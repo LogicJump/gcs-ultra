@@ -1,0 +1,99 @@
+"""
+Unified logging utilities for QGC developer tools.
+
+Provides colored terminal output with support for:
+- TTY detection (auto-disable colors in non-interactive mode)
+- NO_COLOR environment variable (https://no-color.org/)
+
+Usage:
+    from common.logging import log_info, log_error, log_ok, log_warn
+    log_info("Starting analysis...")
+    log_error("Failed to parse file")
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+from enum import Enum
+from typing import TextIO
+
+
+class Color(str, Enum):
+    """ANSI color codes for terminal output."""
+
+    __str__ = str.__str__  # StrEnum-equivalent; stdlib StrEnum is 3.11+
+
+    RED = "\033[0;31m"
+    GREEN = "\033[0;32m"
+    YELLOW = "\033[1;33m"
+    BLUE = "\033[0;34m"
+    CYAN = "\033[0;36m"
+    MAGENTA = "\033[0;35m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    RESET = "\033[0m"
+
+
+def use_color(stream: TextIO | None = None) -> bool:
+    """
+    Determine if colored output should be used.
+
+    Checks:
+    1. NO_COLOR environment variable (disables if set)
+    2. FORCE_COLOR environment variable (enables if set)
+    3. Whether stdout is a TTY
+
+    Args:
+        stream: Output stream to check. Defaults to sys.stdout.
+
+    Returns:
+        True if colors should be used.
+    """
+    if os.environ.get("NO_COLOR"):
+        return False
+    if os.environ.get("FORCE_COLOR"):
+        return True
+    if stream is None:
+        stream = sys.stdout
+    return stream is not None and stream.isatty()
+
+
+def colorize(text: str, color: Color, stream: TextIO | None = None) -> str:
+    """
+    Apply ANSI color code to text if colors are enabled.
+
+    Args:
+        text: Text to colorize.
+        color: Color to apply.
+        stream: Output stream for TTY detection. Defaults to sys.stdout.
+
+    Returns:
+        Colorized text or original text if colors disabled.
+    """
+    if use_color(stream):
+        return f"{color}{text}{Color.RESET}"
+    return text
+
+
+# Module-level convenience functions
+
+
+def log_info(msg: str, *, prefix: str = "[INFO]") -> None:
+    """Log an informational message."""
+    print(f"{colorize(prefix, Color.BLUE)} {msg}")
+
+
+def log_ok(msg: str, *, prefix: str = "[OK]") -> None:
+    """Log a success message."""
+    print(f"{colorize(prefix, Color.GREEN)} {msg}")
+
+
+def log_warn(msg: str, *, prefix: str = "[WARN]") -> None:
+    """Log a warning message."""
+    print(f"{colorize(prefix, Color.YELLOW)} {msg}")
+
+
+def log_error(msg: str, *, prefix: str = "[ERROR]") -> None:
+    """Log an error message to stderr."""
+    print(f"{colorize(prefix, Color.RED, sys.stderr)} {msg}", file=sys.stderr)

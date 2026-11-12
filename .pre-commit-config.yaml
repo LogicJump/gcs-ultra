@@ -1,0 +1,389 @@
+# QGroundControl Pre-Commit Configuration
+# Runner: prek (tools/pyproject.toml `precommit` group); stock pre-commit reads the same file.
+# Install: prek install
+# Run: prek run --all-files (just lint)
+# Update: prek update
+
+# `prek install` also installs the commit-msg hook; hooks without `stages` skip commit-msg.
+default_install_hook_types: [pre-commit, commit-msg]
+default_stages: [pre-commit, manual]
+
+repos:
+  - repo: local
+    hooks:
+      - id: validate-configs
+        name: Validate configuration relationships
+        entry: uv run --frozen --project tools --group lint python tools/validate_configs.py
+        language: system
+        files: ^(\.github/build-config.*\.json|deploy/docker/Dockerfile|tools/(configs/lychee\.toml|validate_configs\.py|pyproject\.toml))$
+        pass_filenames: false
+
+      # Works offline: the schema ships with the build group's locked cmake package.
+      - id: cmake-presets-schema
+        name: Validate CMake presets against CMake's schema
+        entry: uv run --frozen --project tools --group lint --group build python tools/validate_cmake_presets.py
+        language: system
+        files: ^(CMakePresets\.json|cmake/presets/.*\.json|tools/validate_cmake_presets\.py)$
+        pass_filenames: false
+
+      - id: qt-translation-placeholders
+        name: Check changed Qt translation placeholders
+        entry: uv run --frozen --directory tools --group scripts python -m translations.check_placeholders
+        language: system
+        files: ^translations/.*\.ts$
+
+      # CI validators that download pinned tools (build-config.json); pre_commit.py --ci runs them when their
+      # files change. Locally: prek run <id> --hook-stage manual
+      - id: packer-validate
+        name: Validate the runner image Packer template
+        entry: uv run --frozen --project tools --group scripts python tools/ci/runner/validate_runner_configs.py packer
+        language: system
+        files: ^(\.github/runner-images/.*\.(pkr\.hcl|sh|py)|\.github/build-config\.json|tools/ci/runner/validate_runner_configs\.py)$
+        pass_filenames: false
+        stages: [manual]
+
+      - id: runs-on-lint
+        name: Lint the RunsOn configuration
+        entry: uv run --frozen --project tools --group scripts python tools/ci/runner/validate_runner_configs.py runs-on
+        language: system
+        files: ^(\.github/(runs-on\.yml|runner-images/windows-warm-pool\.example\.yml|build-config\.json)|tools/ci/runner/validate_runner_configs\.py)$
+        pass_filenames: false
+        stages: [manual]
+
+      # Types match the release-notes parsers in tools/configs/cliff.toml and the PR title check.
+      - id: conventional-commit-msg
+        name: Conventional Commits message
+        language: pygrep
+        entry: '\A(?!(feat|fix|perf|revert|docs|style|chore|refactor|test|build|ci|deps)(\([^)\n]+\))?!?: \S|(fixup|squash|amend)! |Merge |Revert ")'
+        args: [--multiline]
+        stages: [commit-msg]
+
+  # Basic file checks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-json
+      - id: check-toml
+      - id: pretty-format-json
+        args: ['--indent=2', '--no-ensure-ascii', '--no-sort-keys']
+        files: ^(\.github/|tools/).*\.json$
+      - id: check-xml
+        exclude: ^test/
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ['--maxkb=2000']
+        exclude: ^(resources/icons/|resources/audio/)
+      - id: check-case-conflict
+      - id: check-shebang-scripts-are-executable
+      - id: check-executables-have-shebangs
+      # syrupy snapshots (*.ambr) keep generated whitespace byte-for-byte.
+      - id: trailing-whitespace
+        args: ['--markdown-linebreak-ext=md']
+        exclude: ^(translations/|src/MAVLink/.*\.patch$|.*\.ambr$|test/GPS/Core/Protocols/(corpus|fixtures)/.*\.(bin|gps|nmea|sbf|ubx)$)
+      - id: end-of-file-fixer
+        exclude: ^(src/MAVLink/.*\.patch$|translations/.*\.ts|.*\.(ambr|png|jpg|jpeg|gif|svg|ico|bin|dat)|test/GPS/Core/Protocols/(corpus|fixtures)/.*\.(gps|nmea|sbf|ubx))$
+      - id: mixed-line-ending
+        args: ['--fix=lf']
+        exclude: (\.(ambr|bat|ps1)$|^test/GPS/Core/Protocols/(corpus|fixtures)/.*\.(bin|gps|nmea|sbf|ubx)$)
+
+  # Enforces .editorconfig. tools/configs/editorconfig-checker.json skips binary, generated, and
+  # legacy files that predate the hook, and disables indent_size (continuation lines align to their
+  # opening token) and max_line_length (clang-format and ruff own line length).
+  - repo: https://github.com/editorconfig-checker/editorconfig-checker
+    rev: v4.0.2
+    hooks:
+      - id: editorconfig-checker
+        args: [-config, tools/configs/editorconfig-checker.json]
+
+  # Secret detection
+  - repo: https://github.com/trufflesecurity/trufflehog
+    rev: v3.97.1
+    hooks:
+      - id: trufflehog
+        args: ['--only-verified', '--exclude-paths=tools/configs/trufflehog-exclude.txt']
+
+  # Lint tools run from the locked `lint` group, so hooks, CI, and tools/.venv share one version.
+  - repo: local
+    hooks:
+      # Check changed C++ regions, matching CODING_STYLE.md; new files are checked in full.
+      - id: clang-format
+        name: clang-format
+        entry: uv run --frozen --project tools --group lint python tools/analyzers/clang_format.py
+        language: system
+        types_or: [c++, c]
+
+      # The style reference must stay fully formatted when the style or the pinned clang-format changes.
+      - id: clang-format-coding-style
+        name: clang-format (coding-style reference)
+        entry: >-
+          uv run --frozen --project tools --group lint clang-format --dry-run --Werror
+          tools/coding-style/CodingStyle.h tools/coding-style/CodingStyle.cc
+        language: system
+        files: ^(\.clang-format|tools/uv\.lock|tools/coding-style/.*\.(h|cc))$
+        pass_filenames: false
+
+      # Python linting and formatting (report-only)
+      - id: ruff-check
+        alias: ruff
+        name: ruff check
+        entry: uv run --frozen --project tools --group lint ruff check --force-exclude
+        language: system
+        types_or: [python, pyi, jupyter]
+        require_serial: true
+
+      - id: ruff-format
+        name: ruff format
+        entry: uv run --frozen --project tools --group lint ruff format --force-exclude
+        language: system
+        args: [--check]
+        types_or: [python, pyi, jupyter, markdown]
+        require_serial: true
+
+      # Python type checking
+      - id: pyright
+        name: pyright
+        # terrain and simulation let pyright resolve numpy/rasterio and pymavlink types.
+        entry: uv run --frozen --project tools --group lint --group terrain --group simulation pyright
+        language: system
+        types_or: [python, pyi]
+        require_serial: true
+        # Same paths as pyrightconfig.json's include. Checks the whole project, so a change that breaks an
+        # unchanged module's types still fails.
+        files: ^(tools|test|deploy|\.github/runner-images|\.clusterfuzzlite)/.*\.py$
+        pass_filenames: false
+
+      - id: import-linter
+        name: import-linter (tools contracts)
+        entry: uv run --frozen --directory tools --group lint lint-imports --cache-dir ../.cache/import-linter
+        language: system
+        files: ^tools/.*\.py$
+        pass_filenames: false
+
+      # Keeps tools/uv.lock current with tools/pyproject.toml
+      - id: uv-lock
+        name: uv-lock
+        entry: uv lock --project tools
+        language: system
+        files: ^tools/(pyproject\.toml|uv\.lock)$
+        pass_filenames: false
+
+  # Shell scripts
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.11.0.1-1
+    hooks:
+      - id: shellcheck
+        args: ['-e', 'SC1091']  # Don't warn about not following sourced files
+
+  # Dockerfile linting
+  - repo: https://github.com/AleksaC/hadolint-py
+    rev: v2.15.1
+    hooks:
+      - id: hadolint
+        args: ['--failure-threshold', 'warning']
+        files: (^|/)Dockerfile([.-].*)?$
+        types: [file]
+
+  # GitHub Actions linting
+  # Fork of actionlint; upstream lacks newer syntax such as cache-mode.
+  - repo: https://github.com/kjanat/actionlint
+    rev: v1.17.0
+    hooks:
+      - id: actionlint
+
+  # GitHub Actions security scanning
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.30.1
+    hooks:
+      - id: zizmor
+        name: zizmor (GitHub Actions security)
+        files: ^\.github/(workflows|actions)/.*\.ya?ml$
+
+  # YAML validation
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+
+  # Vendor config schema validation (validate-configs checks .github/build-config.json)
+  - repo: https://github.com/python-jsonschema/check-jsonschema
+    rev: 0.38.0
+    hooks:
+      - id: check-dependabot
+      - id: check-codecov
+      - id: check-github-issue-config
+      - id: check-github-issue-forms
+      - id: check-compose-spec
+      - id: check-renovate
+
+  # Renovate's own validator installs Renovate from npm, so it runs only on demand and in the
+  # CI Scripts workflow when renovate.json or this file changes.
+  - repo: https://github.com/renovatebot/pre-commit-hooks
+    rev: 44.56.1
+    hooks:
+      - id: renovate-config-validator
+        # Also revalidates when this file bumps the validator's own Renovate version.
+        files: ^(\.github/renovate\.json|\.pre-commit-config\.yaml)$
+        pass_filenames: false
+        args: [.github/renovate.json]
+        stages: [manual]
+
+  # Markdown linting (report-only, doesn't auto-fix)
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.49.1
+    hooks:
+      - id: markdownlint
+        exclude: ^(translations/|docs/(zh|ko|tr|ru|ja|de|es|fa|fr|he|uk)/|CHANGELOG\.md)
+
+  # Prose linting (documentation quality)
+  # The sync hook downloads the Packages declared in .vale.ini into the gitignored
+  # .github/styles/ before vale runs; without it vale has no styles and no-ops.
+  # Both hooks share one built environment and the `vale` id, so `prek run vale`
+  # syncs then lints; the `vale-sync` alias selects or skips only the sync.
+  - repo: https://github.com/errata-ai/vale
+    rev: v3.19.0
+    hooks:
+      - id: vale
+        alias: vale-sync
+        name: vale sync (download styles)
+        entry: vale sync
+        files: ^(docs/en/|\.vale\.ini$)
+        pass_filenames: false
+      - id: vale
+        files: ^docs/en/
+        args: ['--no-exit']  # Don't fail on warnings, just report
+        verbose: true  # Findings exit 0, and pre-commit hides passing hooks' output
+
+  # Spell checking (report-only, doesn't auto-fix)
+  - repo: https://github.com/crate-ci/typos
+    rev: v1.50.1
+    hooks:
+      - id: typos
+        args: ['--force-exclude']  # Honor .typos.toml exclusions for explicit pre-commit paths
+        files: \.(md|markdown|txt|rst)$|^docs/
+
+  # Formatter trials: manual-stage checks that never rewrite files.
+  # Run with `prek run <id> --hook-stage manual --files <paths>`.
+  - repo: https://github.com/BlankSpruce/gersemi-pre-commit
+    rev: 0.29.2
+    hooks:
+      - id: gersemi
+        args: [--config, tools/configs/gersemirc.yaml, --check, --diff]
+        exclude: ^cmake/modules/CPM\.cmake$
+        stages: [manual]
+
+  - repo: https://github.com/google/yamlfmt
+    rev: v0.21.0
+    hooks:
+      - id: yamlfmt
+        args: [-conf, tools/configs/yamlfmt.yaml, -lint]
+        stages: [manual]
+
+  - repo: local
+    hooks:
+      - id: qmllint
+        name: Lint QML files
+        entry: uv run --frozen --project tools --group scripts python ./tools/analyze.py --tool qmllint
+        language: system
+        files: \.qml$
+        pass_filenames: true
+
+      - id: qmlformat
+        name: qmlformat (check)
+        entry: uv run --frozen --project tools --group scripts python ./tools/analyzers/qmlformat.py
+        language: system
+        files: \.qml$
+        stages: [manual]
+
+      - id: clang-tidy
+        name: Clang-Tidy static analysis
+        entry: uv run --frozen --project tools --group scripts python ./tools/analyze.py --tool clang-tidy
+        stages: [manual]
+        language: system
+        types_or: [c++, c]
+        exclude: ^test/
+        pass_filenames: true
+
+      - id: cmake-format
+        name: cmake-format (check)
+        entry: cmake-format --check
+        language: python
+        additional_dependencies: ['cmakelang==0.6.13', 'pyyaml==6.0.3']
+        files: (CMakeLists\.txt|\.cmake)$
+        exclude: ^cmake/modules/CPM\.cmake$
+
+      - id: cmake-lint
+        name: cmake-lint
+        entry: cmake-lint
+        language: python
+        additional_dependencies: ['cmakelang==0.6.13', 'pyyaml==6.0.3']
+        files: (CMakeLists\.txt|\.cmake)$
+        exclude: ^cmake/modules/CPM\.cmake$
+
+      - id: clazy
+        name: Qt static analysis (clazy)
+        entry: uv run --frozen --project tools --group scripts python ./tools/analyze.py --tool clazy
+        stages: [manual]
+        language: system
+        types: [c++]
+        exclude: ^test/
+        pass_filenames: true
+
+      - id: check-no-qassert
+        name: Check for Q_ASSERT in production code
+        entry: bash -c 'if grep -nH "Q_ASSERT" "$@" 2>/dev/null; then echo "::error::Q_ASSERT found in production code. Use defensive checks with early returns instead." >&2; exit 1; fi' --
+        language: system
+        types: [c++]
+        # The coding-style example names Q_ASSERT to teach the rule
+        exclude: ^(test|tools/coding-style)/
+        pass_filenames: true
+
+      - id: check-categorized-logging
+        name: Check for category function passed to uncategorized logging macro
+        entry: >-
+          bash -c 'if grep -EnH "(^|[^A-Za-z0-9_])q(Debug|Info|Warning|Critical)\([[:space:]]*[A-Za-z_]+Log[[:space:]]*\)" "$@" 2>/dev/null;
+          then echo "::error::Category function passed to qDebug/qInfo/qWarning/qCritical.
+          Use the qCDebug/qCInfo/qCWarning/qCCritical macros instead." >&2; exit 1; fi' --
+        language: system
+        types: [c++]
+        pass_filenames: true
+
+      - id: check-no-qtest-ignore-message
+        name: Check for QTest::ignoreMessage in test code
+        entry: >-
+          bash -c 'if grep -nH "QTest::ignoreMessage" "$@" 2>/dev/null;
+          then echo "::error::QTest::ignoreMessage found.
+          Use expectLogMessage+verifyExpectedLogMessage or ignoreLogMessage instead." >&2; exit 1; fi' --
+        language: system
+        types: [c++]
+        files: ^test/
+        pass_filenames: true
+
+      - id: check-no-fixed-qwait
+        name: Check for fixed-delay QTest::qWait in test code
+        entry: >-
+          bash -c 'if grep -EnH "qWait\([1-9][0-9]*\)" "$@" 2>/dev/null;
+          then echo "::error::QTest::qWait(<non-zero>) found.
+          Use QTRY_VERIFY_WITH_TIMEOUT, QTRY_COMPARE_WITH_TIMEOUT,
+          or QSignalSpy::wait with a TestTimeout::* constant instead." >&2; exit 1; fi' --
+        language: system
+        types: [c++]
+        files: ^test/
+        pass_filenames: true
+
+      - id: vehicle-null-check
+        name: Check vehicle null safety
+        entry: uv run --frozen --project tools --group scripts python tools/analyzers/vehicle_null_check.py
+        language: system
+        types: [c++]
+        exclude: ^(test/|tools/tests/fixtures/)
+        pass_filenames: true
+
+      - id: qt-translate-noop-check
+        name: Check QT_TRANSLATE_NOOP misuse
+        entry: uv run --frozen --project tools --group scripts python tools/analyzers/qt_translate_noop_check.py
+        language: system
+        types: [c++]
+        exclude: ^test/
+        pass_filenames: true
+
+exclude: ^build/

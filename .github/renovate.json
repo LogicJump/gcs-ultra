@@ -1,0 +1,201 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard",
+    ":enablePreCommit",
+    ":semanticCommitTypeAll(deps)"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "ignorePaths": [
+    ".github/workflows/**"
+  ],
+  "description": "Manages npm, Python, pre-commit, development environments, Gradle dependencies and Wrapper, Node versions, Dockerfiles, and composite actions. Dependabot owns .github/workflows, which are excluded here.",
+  "enabledManagers": [
+    "devcontainer",
+    "dockerfile",
+    "github-actions",
+    "gradle-wrapper",
+    "npm",
+    "pep621",
+    "pre-commit",
+    "gradle",
+    "nvm",
+    "custom.regex"
+  ],
+  "customManagers": [
+    {
+      "description": "Docker variant base images; docker-compose.yml is generated from variants.json, so both update together",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^deploy/docker/variants\\.json$/",
+        "/^deploy/docker/docker-compose\\.yml$/"
+      ],
+      "matchStrings": [
+        "BASE_REF\"?: \"(?<depName>[^:\"]+):(?<currentValue>[^@\"]+)@(?<currentDigest>sha256:[a-f0-9]{64})\""
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "description": "The uv required-version floor tracks the Dockerfile's uv image tag; tools/validate_configs.py requires them to match",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^tools/pyproject\\.toml$/"
+      ],
+      "matchStrings": [
+        "required-version = \">=(?<currentValue>[^\"]+)\""
+      ],
+      "depNameTemplate": "ghcr.io/astral-sh/uv",
+      "datasourceTemplate": "docker"
+    },
+    {
+      "description": "The CMake that build-setup installs with lukka/get-cmake, which resolves versions from a catalog bundled in each of its releases. Its tags name the newest CMake in that catalog, so following them keeps the pin installable; the github-actions manager bumps the action in the same group PR",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github/build-config\\.json$/"
+      ],
+      "matchStrings": [
+        "\"cmake_version\": \"(?<currentValue>[^\"]+)\""
+      ],
+      "depNameTemplate": "lukka/get-cmake",
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "description": "The Ninja that build-setup installs with lukka/get-cmake",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github/build-config\\.json$/"
+      ],
+      "matchStrings": [
+        "\"ninja_version\": \"(?<currentValue>[^\"]+)\""
+      ],
+      "depNameTemplate": "ninja-build/ninja",
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    },
+    {
+      "description": "Prebuilt CI tools in build-config.json's tools section (ccache, mold, sccache, Grype, Packer, RunsOn CLI, ClangBuildAnalyzer), tracked by their GitHub releases",
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^\\.github/build-config\\.json$/"
+      ],
+      "matchStrings": [
+        "\"repository\": \"(?<depName>[^\"]+)\",\\s*\"version\": \"(?<currentValue>[^\"]+)\""
+      ],
+      "datasourceTemplate": "github-releases",
+      "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Auto-merge patch updates after CI passes",
+      "matchManagers": [
+        "npm",
+        "pep621",
+        "pre-commit"
+      ],
+      "matchUpdateTypes": [
+        "patch"
+      ],
+      "automerge": true
+    },
+    {
+      "description": "Combine every update except Android into one weekly PR, so coupled pins such as the uv required-version floor and the Dockerfile's uv image land together",
+      "groupName": "all dependencies",
+      "matchManagers": [
+        "npm",
+        "pep621",
+        "pre-commit",
+        "github-actions",
+        "devcontainer",
+        "dockerfile",
+        "nvm",
+        "custom.regex"
+      ],
+      "schedule": [
+        "before 6am on monday"
+      ]
+    },
+    {
+      "description": "Group Android library updates such as usb-serial-for-android; the Qt-coupled Android toolchain has its own group below",
+      "groupName": "android dependencies",
+      "matchManagers": [
+        "gradle",
+        "gradle-wrapper"
+      ]
+    },
+    {
+      "description": "Keep lock file maintenance in one PR instead of one per group",
+      "matchUpdateTypes": [
+        "lockFileMaintenance"
+      ],
+      "groupName": null
+    },
+    {
+      "description": "Qt's Android template pins the Android Gradle Plugin, Gradle, and androidx.core for each Qt release, and the Kotlin Gradle plugin must support them. A newer release can need a compileSdk or Android Gradle Plugin newer than that Qt supports, which breaks androidx and other libraries, so these wait for approval on the Dependency Dashboard and move together with Qt upgrades, following Qt's template",
+      "groupName": "android toolchain",
+      "matchManagers": [
+        "gradle",
+        "gradle-wrapper"
+      ],
+      "matchDepNames": [
+        "gradle",
+        "com.android.tools.build:gradle",
+        "org.jetbrains.kotlin:kotlin-gradle-plugin",
+        "androidx.**"
+      ],
+      "dependencyDashboardApproval": true
+    },
+    {
+      "description": "lukka/get-cmake picks up new Ninja releases only when it next refreshes its bundled catalog",
+      "matchPackageNames": [
+        "ninja-build/ninja"
+      ],
+      "minimumReleaseAge": "30 days"
+    },
+    {
+      "description": "A tools pin bump also needs the release's SHA-256 digests in build-config.json (mold and ClangBuildAnalyzer publish none), so each opens its own PR only after approval on the Dependency Dashboard",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDepNames": [
+        "ccache/ccache",
+        "rui314/mold",
+        "mozilla/sccache",
+        "anchore/grype",
+        "hashicorp/packer",
+        "runs-on/cli",
+        "aras-p/ClangBuildAnalyzer"
+      ],
+      "groupName": null,
+      "dependencyDashboardApproval": true
+    }
+  ],
+  "major": {
+    "dependencyDashboardApproval": true
+  },
+  "prConcurrentLimit": 5,
+  "prHourlyLimit": 2,
+  "schedule": [
+    "before 6am on monday"
+  ],
+  "timezone": "UTC",
+  "vulnerabilityAlerts": {
+    "labels": [
+      "security",
+      "priority"
+    ],
+    "schedule": [
+      "at any time"
+    ]
+  },
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "before 6am on monday"
+    ]
+  }
+}

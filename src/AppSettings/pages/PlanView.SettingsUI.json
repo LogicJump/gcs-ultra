@@ -1,0 +1,40 @@
+{
+    "version": 1,
+    "fileType": "SettingsUI",
+    "groups": [
+        {
+            "heading": "General",
+            "keywords": ["mission altitude", "default altitude", "vtol transition", "condition gate", "takeoff", "landing pattern", "waypoint"],
+            "controls": [
+                {
+                    "setting": "appSettings.defaultMissionItemAltitude"
+                },
+                {
+                    "setting": "planViewSettings.vtolTransitionDistance"
+                },
+                {
+                    "setting": "planViewSettings.useConditionGate"
+                },
+                {
+                    "setting": "planViewSettings.takeoffItemNotRequired"
+                },
+                {
+                    "setting": "planViewSettings.allowMultipleLandingPatterns"
+                }
+            ]
+        },
+        {
+            "heading": "Experimental",
+            "keywords": ["plan panel", "tabs", "tree view", "geomap", "3d map"],
+            "controls": [
+                {
+                    "setting": "planViewSettings.useNewPlanPanel"
+                },
+                {
+                    "setting": "planViewSettings.useGeoMapEngine",
+                    "showWhen": "QGroundControl.settingsManager.planViewSettings.useNewPlanPanel.rawValue"
+                }
+            ]
+        }
+    ]
+}

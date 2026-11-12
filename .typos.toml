@@ -1,0 +1,43 @@
+# Typos Configuration
+# https://github.com/crate-ci/typos
+
+[default]
+# Color literals (#RRGGBB / #AARRGGBB); the # keeps real words out of the match.
+extend-ignore-re = ["#[0-9a-fA-F]{3,8}\\b"]
+extend-ignore-identifiers-re = [
+    # 0x-prefixed hex literals and hash-like bare hex (SHAs). Must stay anchored and
+    # long — shorter bounds exempt all-hex-letter words (facade, decade), hiding typos.
+    "\\b0x[0-9a-fA-F]+\\b",
+    "\\b[0-9a-fA-F]{16,}\\b",
+    "\\bQT_FATAL_CRITICALS\\b",
+    "\\bQ_INVOKABLE\\b",
+]
+
+# Only words the typos dictionary flags; keys match case-insensitively.
+[default.extend-words]
+NED = "NED"
+SER = "SER"
+SITL = "SITL"
+# Throttle abbreviations (common in parameter names like THR_MIN, Q_THR_MIN_PWM)
+THR = "THR"
+LINZ = "LINZ"  # Land Information New Zealand
+LOD = "LOD"  # level of detail
+PN = "PN"  # typos splits "PNGs" into "PN" + "Gs"
+empy = "empy"  # Python package that ArduPilot's build needs
+
+[files]
+extend-exclude = [
+    "translations/",
+    # Foreign language documentation (avoid false positives)
+    "docs/ko/",
+    "docs/tr/",
+    "docs/zh/",
+    "docs/ru/",
+    "docs/ja/",
+    "docs/de/",
+    "docs/es/",
+    "docs/fa/",
+    "docs/fr/",
+    "docs/he/",
+    "docs/uk/",
+]

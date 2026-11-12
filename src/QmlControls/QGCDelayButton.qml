@@ -1,0 +1,135 @@
+import QtQuick
+import QtQuick.Controls
+import QtQuick.Layouts
+
+import QGroundControl
+import QGroundControl.Controls
+
+DelayButton {
+    id:             control
+    hoverEnabled:   !ScreenTools.isMobile
+    topPadding:     _verticalPadding
+    bottomPadding:  alwaysShowHelp ? Math.max(_verticalPadding, helpText.implicitHeight) : _verticalPadding
+    leftPadding:    _horizontalPadding
+    rightPadding:   _horizontalPadding
+    focusPolicy:    Qt.ClickFocus
+    font.family:    ScreenTools.normalFontFamily
+    delay:          defaultDelay
+
+    property bool   primary:        false
+    property bool   showBorder:     true
+    property real   backRadius:     ScreenTools.defaultBorderRadius
+    property real   heightFactor:   0.3
+    property real   fontWeight:     Font.Normal // default for qml Text
+    property real   pointSize:      ScreenTools.defaultFontPointSize
+    property int    defaultDelay:   500
+    property bool   alwaysShowHelp: false
+
+    property alias wrapMode:            text.wrapMode
+    property alias horizontalAlignment: text.horizontalAlignment
+    property alias backgroundColor:     backRect.color
+    property alias textColor:           text.color
+
+    property bool   _showHighlight:     enabled && pressed
+    property int    _horizontalPadding: ScreenTools.defaultFontPixelWidth * 2
+    property int    _verticalPadding:   Math.round(ScreenTools.defaultFontPixelHeight * heightFactor)
+    property bool   _showHelp:          false
+    property bool   _activated:         false
+
+    QGCPalette { id: qgcPal; colorGroupEnabled: enabled }
+
+    TextMetrics {
+        id:             holdToConfirmMetrics
+        font.pointSize: control.pointSize
+        font.family:    control.font.family
+        font.weight:    control.fontWeight
+        text:           qsTr("Hold to Confirm")
+    }
+
+    TextMetrics {
+        id:             buttonTextMetrics
+        font:           holdToConfirmMetrics.font
+        text:           control.text
+    }
+
+    Timer {
+        id:         helpTimeout
+        interval:   3000
+        repeat:     false
+        onTriggered: control._showHelp = false
+    }
+
+    onActivated: {
+        _activated = true
+        _showHelp = false
+    }
+    onPressed: {
+        _activated = false
+    }
+    onReleased: {
+        _showHelp = !_activated
+        _activated = false
+        if (_showHelp) {
+            helpTimeout.start()
+        } else {
+            helpTimeout.stop()
+        }
+    }
+
+    background: Rectangle {
+        id:             backRect
+        radius:         backRadius
+        // Wide enough for both the button text and the early-release prompt so the button never resizes when it swaps
+        implicitWidth:  Math.max(Math.ceil(Math.max(holdToConfirmMetrics.advanceWidth, buttonTextMetrics.advanceWidth)) + control.leftPadding + control.rightPadding,
+                                 ScreenTools.implicitButtonWidth)
+        implicitHeight: ScreenTools.implicitButtonHeight
+        border.width:   showBorder ? 1 : 0
+        border.color:   control.primary || control._showHighlight || (control.enabled && control.hovered) ? qgcPal.accent : qgcPal.borderSubtle
+        color:          control.primary ? qgcPal.accent : (control._showHighlight ? qgcPal.accentSubtle : qgcPal.windowCard)
+
+        Rectangle {
+            anchors.fill:   parent
+            radius:         parent.radius
+            color:          qgcPal.accentText
+            visible:        control.primary
+            opacity:        control._showHighlight ? 0.25 : (control.enabled && control.hovered ? 0.12 : 0)
+        }
+
+        QGCColoredImage {
+            anchors.topMargin:      _sliderIndicatorMargin
+            anchors.bottomMargin:   _sliderIndicatorMargin
+            anchors.leftMargin:     control.pressed ? (parent.width - width) * control.progress : 0
+            anchors.left:           parent.left
+            anchors.top:            parent.top
+            anchors.bottom:         parent.bottom
+            width:                  height
+            source:                 "qrc:/res/chevron-double-right.svg"
+            sourceSize.height:      parent.height
+            fillMode:               Image.PreserveAspectFit
+            color:                  control.primary ? qgcPal.accentText : (control._showHighlight ? qgcPal.accent : qgcPal.textPrimary)
+            opacity:                control._showHighlight ? 1 : (control.primary ? 0.4 : 0.2)
+
+            property real _sliderIndicatorMargin: ScreenTools.defaultFontPixelWidth * 0.5
+        }
+
+        QGCLabel {
+            id:                         helpText
+            text:                       qsTr("Hold to Confirm")
+            anchors.bottom:             parent.bottom
+            anchors.horizontalCenter:   parent.horizontalCenter
+            font.pointSize:             ScreenTools.smallFontPointSize
+            color:                      control.textColor
+            visible:                    control.alwaysShowHelp
+        }
+    }
+
+    contentItem: QGCLabel {
+        id:                     text
+        horizontalAlignment:    Text.AlignHCenter
+        text:                   control._showHelp && !control.alwaysShowHelp ? qsTr("Hold to Confirm") : control.text
+        font.pointSize:         control.pointSize
+        font.family:            control.font.family
+        font.weight:            control.fontWeight
+        color:                  control.primary ? qgcPal.accentText : qgcPal.textPrimary
+    }
+}

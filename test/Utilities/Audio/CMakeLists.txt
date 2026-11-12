@@ -1,0 +1,15 @@
+# ============================================================================
+# Audio Utilities Unit Tests
+# Tests for audio output and speech synthesis
+# ============================================================================
+
+target_sources(
+    QGCUnitTests
+    PRIVATE
+        AudioOutputTest.cc
+        AudioOutputTest.h
+)
+
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+
+add_qgc_test(AudioOutputTest LABELS Unit Utilities)

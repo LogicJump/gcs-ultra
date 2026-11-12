@@ -1,0 +1,121 @@
+name: Run Unit Tests
+description: Run tests via CTest, then report and upload their results even when tests fail.
+
+inputs:
+  build-dir:
+    description: Path to CMake build directory
+    required: false
+    default: ${{ runner.temp }}/build
+  junit-output:
+    description: JUnit XML output filename (relative to build-dir)
+    required: false
+    default: junit-results.xml
+  ctest-output:
+    description: Captured CTest stdout/stderr filename (relative to build-dir)
+    required: false
+    default: test-output.txt
+  include-labels:
+    description: CTest labels regex to include
+    required: false
+    default: Unit
+  exclude-labels:
+    description: CTest labels regex to exclude
+    required: false
+    default: 'Flaky|Network'
+  tests-regex:
+    description: CTest test-name regex to include (-R); empty selects every test the labels select
+    required: false
+    default: ''
+  parallel:
+    description: Number of parallel CTest jobs, or 'auto' (one per CPU)
+    required: false
+    default: auto
+  report-name:
+    description: >-
+      Job-summary section title for the JUnit results (counts, failures, slowest tests) and
+      error annotations for failed tests; empty skips both
+    required: false
+    default: ''
+  artifact-name:
+    description: Upload the JUnit and CTest output files as this artifact; empty skips the upload
+    required: false
+    default: ''
+  retention-days:
+    description: Days to retain the results artifact
+    required: false
+    default: '14'
+  duration-report:
+    description: Annotate tests slower than 60 s with warnings (needs report-name)
+    required: false
+    default: 'false'
+  upload-codecov:
+    description: Upload JUnit test analytics to Codecov using OIDC (caller needs id-token write)
+    required: false
+    default: 'false'
+  codecov-flags:
+    description: Flags identifying this test suite in Codecov
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    # cmake_helper.py and junit_report.py read the INPUT_* variables as argument defaults.
+    # QT_FORCE_STDERR_LOGGING sends QtTest's results to the captured output on Windows, where with no
+    # console attached they otherwise go to OutputDebugString.
+    - name: Run CTest
+      shell: bash
+      working-directory: ${{ inputs.build-dir }}
+      run: python3 "${GITHUB_WORKSPACE}/tools/ci/compile/cmake_helper.py" ctest
+      env:
+        INPUT_JUNIT_OUTPUT: ${{ inputs.junit-output }}
+        INPUT_CTEST_OUTPUT: ${{ inputs.ctest-output }}
+        INPUT_PARALLEL: ${{ inputs.parallel }}
+        INPUT_INCLUDE_LABELS: ${{ inputs.include-labels }}
+        INPUT_EXCLUDE_LABELS: ${{ inputs.exclude-labels }}
+        INPUT_TESTS_REGEX: ${{ inputs.tests-regex }}
+        QT_FORCE_STDERR_LOGGING: '1'
+
+    # The steps below also run after test failures; the failed CTest step still fails the action.
+    - name: Report test results
+      if: ${{ !cancelled() && inputs.report-name != '' }}
+      shell: bash
+      working-directory: ${{ inputs.build-dir }}
+      env:
+        INPUT_JUNIT_PATH: ${{ inputs.junit-output }}
+        INPUT_TITLE: ${{ inputs.report-name }}
+        INPUT_SLOW_WARNINGS: ${{ inputs.duration-report }}
+      run: python3 "${GITHUB_WORKSPACE}/tools/ci/reporting/junit_report.py"
+
+    - name: Upload Codecov test analytics
+      if: ${{ !cancelled() && inputs.upload-codecov == 'true' }}
+      uses: codecov/codecov-action@v7
+      with:
+        files: ${{ inputs.build-dir }}/${{ inputs.junit-output }}
+        report_type: test_results
+        flags: ${{ inputs.codecov-flags }}
+        name: ${{ inputs.report-name }}
+        use_oidc: true
+        disable_search: true
+        handle_no_reports_found: true
+        fail_ci_if_error: false
+
+    - name: Upload test results
+      id: upload-results
+      if: ${{ !cancelled() && inputs.artifact-name != '' }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          ${{ inputs.build-dir }}/${{ inputs.ctest-output }}
+          ${{ inputs.build-dir }}/${{ inputs.junit-output }}
+        retention-days: ${{ inputs.retention-days }}
+
+    # Codecov writes no summary, so the link lands below the report-name section.
+    - name: Link test results
+      if: ${{ !cancelled() && steps.upload-results.outputs.artifact-url != '' }}
+      shell: bash
+      run: python3 "${GITHUB_WORKSPACE}/tools/ci/packaging/artifact_link.py" --label "Test results"
+      env:
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        ARTIFACT_URL: ${{ steps.upload-results.outputs.artifact-url }}

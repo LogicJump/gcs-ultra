@@ -1,0 +1,84 @@
+name: Mirror GStreamer
+
+# Mirror official upstream GStreamer release artifacts into the QGC S3 bucket
+# (s3://qgroundcontrol/dependencies/gstreamer/<platform>/<filename>) — the
+# fallback mirror the build reads when the upstream download is unavailable.
+# Every master push that changes build-config.json, where
+# gstreamer.version.<platform> is bumped, mirrors each platform's version;
+# packages already in the bucket are skipped before downloading.
+
+on:
+  push:
+    branches: [master]
+    paths: ['.github/build-config.json']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "GStreamer version (empty = each platform's gstreamer.version.<platform>)"
+        required: false
+        default: ''
+        type: string
+      platforms:
+        description: "Platforms to mirror ('all' or comma list: android,ios,macos,windows)"
+        required: false
+        default: 'all'
+        type: string
+      dry_run:
+        description: 'Download and verify only; do not upload'
+        required: false
+        default: false
+        type: boolean
+      force:
+        description: 'Re-upload even if the object already exists'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: mirror-gstreamer-${{ inputs.version }}-${{ inputs.platforms }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  mirror:
+    name: Mirror GStreamer ${{ inputs.version || 'build-config versions' }}
+    # Forks have no AWS credentials; they can still dispatch a dry run.
+    if: github.event_name == 'workflow_dispatch' || github.repository == 'mavlink/qgroundcontrol'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github
+            tools
+          sparse-checkout-cone-mode: false
+
+      # Exports AWS_REGION and AWS_DEFAULT_REGION (us-west-2) for the upload.
+      - name: Configure AWS Credentials
+        if: ${{ !inputs.dry_run }}
+        uses: ./.github/actions/aws-credentials
+        with:
+          aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
+          aws-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      # An empty version mirrors each platform's gstreamer.version.<platform> in build-config.json.
+      - name: Mirror artifacts
+        env:
+          MIRROR_VERSION: ${{ inputs.version }}
+          MIRROR_PLATFORMS: ${{ inputs.platforms }}
+          MIRROR_DRY_RUN: ${{ inputs.dry_run }}
+          MIRROR_FORCE: ${{ inputs.force }}
+        run: python3 "${GITHUB_WORKSPACE}/tools/ci/gstreamer/mirror_gstreamer.py"

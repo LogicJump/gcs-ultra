@@ -1,0 +1,80 @@
+name: Install Dependencies
+description: >-
+  Install platform build dependencies: apt packages on Linux, Homebrew packages and GStreamer on
+  macOS, and MSVC with NSIS on Windows. CMake, Ninja, ccache, and mold come from build-setup.
+
+inputs:
+  msvc-arm64:
+    description: 'Also add the ARM64 cross compiler component (Windows only)'
+    required: false
+    default: 'false'
+  extra-packages:
+    description: 'Additional packages to install (space-separated, Linux only)'
+    required: false
+    default: ''
+  category:
+    description: 'Install only this install_dependencies category (Linux only, e.g. core); blank installs the full desktop set'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Python (Windows)
+      if: runner.os == 'Windows'
+      uses: ./.github/actions/setup-python
+
+    # The helper makes three attempts (20 minutes each on Windows, 10 on macOS) and kills a hung
+    # attempt's whole process tree.
+    - name: Install MSVC and NSIS (Windows)
+      if: runner.os == 'Windows'
+      shell: bash
+      env:
+        INPUT_MSVC_ARM64: ${{ inputs.msvc-arm64 }}
+      run: python3 "${GITHUB_WORKSPACE}/tools/ci/runner/install_dependencies_helper.py" windows
+
+    - name: Plan apt packages (Linux)
+      if: runner.os == 'Linux'
+      id: apt-plan
+      shell: bash
+      env:
+        INPUT_CATEGORY: ${{ inputs.category }}
+      run: python3 "${GITHUB_WORKSPACE}/tools/ci/runner/install_dependencies_helper.py" plan
+
+    # Downloaded .debs, so slow apt mirrors only hurt on a miss (key rationale in the plan step's
+    # helper). The save follows a successful install, so a failed one never stores a partial set
+    # under a key that would then never be re-saved. Copilot sessions (event "dynamic") cannot
+    # write the cache; copilot-setup-steps.yml first restores the apt download artifact its master
+    # runs upload, since GitHub evicts their cache entries from the full pool within hours.
+    - name: Restore apt download cache (Linux)
+      id: apt-cache
+      if: runner.os == 'Linux'
+      uses: actions/cache/restore@v6
+      with:
+        path: ~/.cache/qgc-apt-archives
+        key: ${{ steps.apt-plan.outputs.key }}
+        restore-keys: ${{ steps.apt-plan.outputs.restore-keys }}
+
+    # Retry, mirror, and cache-ownership handling live in tools/ci/runner/apt_install_retry.py.
+    - name: Install apt packages (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      env:
+        INPUT_CATEGORY: ${{ inputs.category }}
+        INPUT_EXTRA_PACKAGES: ${{ inputs.extra-packages }}
+      run: python3 "${GITHUB_WORKSPACE}/tools/ci/runner/install_dependencies_helper.py" install
+
+    - name: Save apt download cache (Linux)
+      if: >-
+        runner.os == 'Linux' && github.event_name != 'dynamic' &&
+        steps.apt-cache.outputs.cache-hit != 'true'
+      continue-on-error: true
+      uses: actions/cache/save@v6
+      with:
+        path: ~/.cache/qgc-apt-archives
+        key: ${{ steps.apt-plan.outputs.key }}
+
+    - name: Install dependencies (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: python3 "${GITHUB_WORKSPACE}/tools/ci/runner/install_dependencies_helper.py" macos
