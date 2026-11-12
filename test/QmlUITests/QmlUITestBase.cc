@@ -118,7 +118,8 @@ void QmlUITestBase::_setUseGeoMapPlanEngineFact(bool use)
 {
     // The setting requires a restart, which the app announces on every change
     ignoreLogMessage("API.QGCApplication.AppMessage", QtDebugMsg,
-                     QRegularExpression(QStringLiteral("Restart application for changes to take effect")));
+                     QRegularExpression(QRegularExpression::escape(
+                         QCoreApplication::translate("Fact", "Restart application for changes to take effect."))));
     SettingsManager::instance()->planViewSettings()->useGeoMapEngine()->setRawValue(use);
 }
 

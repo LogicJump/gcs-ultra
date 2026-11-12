@@ -182,6 +182,9 @@ void QGCApplication::setLanguage()
     QLocale::Language possibleLocale = AppSettings::_qLocaleLanguageEarlyAccess();
     if (possibleLocale != QLocale::AnyLanguage) {
         _locale = QLocale(possibleLocale);
+    } else if (_runningUnitTests) {
+        // Tests compare source text and JSON metadata independently of the host language.
+        _locale = QLocale(QLocale::English);
     }
     //-- We have specific fonts for Korean
     if (_locale == QLocale::Korean) {
@@ -197,8 +200,8 @@ void QGCApplication::setLanguage()
     removeTranslator(JsonParsing::translator());
     removeTranslator(&_qgcTranslatorSourceCode);
     removeTranslator(&_qgcTranslatorQtLibs);
+    QLocale::setDefault(_locale);
     if (_locale.name() != "en_US") {
-        QLocale::setDefault(_locale);
         if (_qgcTranslatorQtLibs.load("qt_" + _locale.name(), QLibraryInfo::path(QLibraryInfo::TranslationsPath))) {
             installTranslator(&_qgcTranslatorQtLibs);
         } else {

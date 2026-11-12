@@ -198,7 +198,8 @@ void FlyViewOccluderUITest::_testVehicleUnderWidgetRecenters()
     const QVariant savedEnabled = geoEngineFact->rawValue();
     const auto guard = qScopeGuard([geoEngineFact, savedEnabled] { geoEngineFact->setRawValue(savedEnabled); });
     ignoreLogMessage("API.QGCApplication.AppMessage", QtDebugMsg,
-                     QRegularExpression(QStringLiteral("Restart application for changes to take effect")));
+                     QRegularExpression(QRegularExpression::escape(
+                         QCoreApplication::translate("Fact", "Restart application for changes to take effect."))));
     geoEngineFact->setRawValue(geoMapEngine);
 
     runWithMockLink(

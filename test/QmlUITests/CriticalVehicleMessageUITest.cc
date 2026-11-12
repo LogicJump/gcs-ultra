@@ -1,5 +1,6 @@
 #include "CriticalVehicleMessageUITest.h"
 
+#include <QtCore/QCoreApplication>
 #include <QtCore/QPointer>
 #include <QtCore/QStringList>
 #include <QtCore/QVariant>
@@ -20,7 +21,6 @@ constexpr const char* kHeadingObjectName = "criticalVehicleMessage_heading";
 constexpr const char* kDismissTimerObjectName = "criticalVehicleMessage_dismissTimer";
 constexpr const char* kConsolePageObjectName = "mavlinkConsole_page";
 constexpr const char* kConsoleTextAreaObjectName = "mavlinkConsole_textArea";
-constexpr const char* kConsoleButtonObjectName = "analyzeButton_MAVLink Console";
 constexpr const char* kIndicatorDrawerObjectName = "indicatorDrawerLoader";
 
 constexpr const char* kFirstMessage = "Test critical vehicle message";
@@ -111,7 +111,9 @@ QQuickItem* CriticalVehicleMessageUITest::_openMAVLinkConsolePage()
     if (!clickToolSelectDropdownButton(QStringLiteral("toolbar_viewAnalyze"))) {
         return nullptr;
     }
-    if (!clickButton(objName(kConsoleButtonObjectName))) {
+    const QString buttonName =
+        QStringLiteral("analyzeButton_") + QCoreApplication::translate("QGCCorePlugin", "MAVLink Console");
+    if (!clickButton(buttonName)) {
         QTest::qFail("MAVLink Console analyze page button not found", __FILE__, __LINE__);
         return nullptr;
     }

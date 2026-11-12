@@ -30,10 +30,11 @@ static QQuickItem* findVisibleSectionButton(QQuickItem* root, const QString& sec
     if (!root || !root->isVisible()) {
         return nullptr;
     }
+    const QString translatedSectionName = QCoreApplication::translate("Video.SettingsUI.json", qPrintable(sectionName));
     const auto children = root->childItems();
     if (root->property("sectionIndex").isValid()) {
         for (auto* label : children) {
-            if (label->isVisible() && label->property("text").toString() == sectionName) {
+            if (label->isVisible() && label->property("text").toString() == translatedSectionName) {
                 return root;
             }
         }

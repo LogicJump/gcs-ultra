@@ -1,11 +1,48 @@
 #include "AppSettingsTest.h"
 
+#include <QtCore/QLocale>
+#include <QtCore/QScopeGuard>
+#include <QtCore/QSettings>
+
 #include "AppSettings.h"
 #include "FirmwarePluginManager.h"
+#include "QGCApplication.h"
 #include "QGCMAVLink.h"
 #include "SettingsManager.h"
 
 UT_REGISTER_TEST(AppSettingsTest, TestLabel::Unit)
+
+void AppSettingsTest::_defaultTestLanguageIsEnglish()
+{
+    QVERIFY(qgcApp());
+    QCOMPARE(qgcApp()->getCurrentLanguage().language(), QLocale::English);
+    QCOMPARE(QLocale().language(), QLocale::English);
+}
+
+void AppSettingsTest::_explicitLanguageCanReturnToEnglish()
+{
+    QVERIFY(qgcApp());
+    QSettings settings;
+    const QVariant savedLanguage = settings.value(AppSettings::qLocaleLanguageName);
+    const auto restoreLanguage = qScopeGuard([&settings, savedLanguage] {
+        if (savedLanguage.isValid()) {
+            settings.setValue(AppSettings::qLocaleLanguageName, savedLanguage);
+        } else {
+            settings.remove(AppSettings::qLocaleLanguageName);
+        }
+        qgcApp()->setLanguage();
+    });
+
+    settings.setValue(AppSettings::qLocaleLanguageName, QLocale::Chinese);
+    qgcApp()->setLanguage();
+    QCOMPARE(qgcApp()->getCurrentLanguage().language(), QLocale::Chinese);
+    QCOMPARE(QLocale().language(), QLocale::Chinese);
+
+    settings.setValue(AppSettings::qLocaleLanguageName, QLocale::English);
+    qgcApp()->setLanguage();
+    QCOMPARE(qgcApp()->getCurrentLanguage().language(), QLocale::English);
+    QCOMPARE(QLocale().language(), QLocale::English);
+}
 
 void AppSettingsTest::_preferredFirmwareClassEnumFiltered()
 {
