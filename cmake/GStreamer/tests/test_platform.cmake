@@ -11,6 +11,8 @@ endforeach()
 include("${CMAKE_CURRENT_LIST_DIR}/../../modules/BuildConfigReader.cmake")
 
 qgc_test_sandbox(_sandbox "platform${TEST_CASE}")
+# Only the cases named Jane Doe should contain spaces, regardless of the checkout path.
+file(RELATIVE_PATH _sandbox "${CMAKE_CURRENT_BINARY_DIR}" "${_sandbox}")
 
 # pkg-config cannot pass on a path with spaces, so an SDK in one fails configure, except on iOS, which has no
 # pkg-config. A download goes through the short path of a CPM_SOURCE_CACHE with spaces on a Windows host.

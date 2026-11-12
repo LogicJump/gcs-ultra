@@ -9,9 +9,10 @@ class PlanMasterController;
 /// On close MainWindow runs a sequence of checks (unsaved mission, pending
 /// parameter writes, active vehicle connections), each of which raises its own
 /// warning dialog in that fixed order. Accepting a warning advances to the next
-/// check; rejecting one cancels the close. The matrix test drives every
-/// reachable permutation of the three conditions and every accept/reject
-/// decision through the real toolbar Q-logo dropdown Close button.
+/// check; rejecting one cancels the close. The matrix tests drive every reachable
+/// permutation of the three conditions and every accept/reject decision through
+/// the real toolbar Q-logo dropdown Close button. They are split by condition
+/// family so each function-level CTest shard has a bounded runtime.
 ///
 /// A separate test verifies that a freshly downloaded (unedited) mission does
 /// NOT raise the unsaved-mission warning, because a downloaded plan reflects
@@ -33,8 +34,16 @@ public:
     AppCloseWarningUITest() = default;
 
 private slots:
-    void _testCloseWarningMatrix_data();
-    void _testCloseWarningMatrix();
+    void _testCloseWarningNoMissionNoPending_data();
+    void _testCloseWarningNoMissionNoPending();
+    void _testCloseWarningPendingNoMission_data();
+    void _testCloseWarningPendingNoMission();
+    void _testCloseWarningMissionOnly_data();
+    void _testCloseWarningMissionOnly();
+    void _testCloseWarningMissionWithConnection_data();
+    void _testCloseWarningMissionWithConnection();
+    void _testCloseWarningMissionWithPendingWrites_data();
+    void _testCloseWarningMissionWithPendingWrites();
     void _testNoUnsavedMissionWarningForDownloadedMission();
     void _testNoUnsavedMissionWarningAfterSuccessfulUpload();
     void _testNoUnsavedMissionWarningAfterSaveToFile();
@@ -43,6 +52,9 @@ private slots:
     void _testBackKeyRaisesCloseWarning();
 
 private:
+    static void _addCloseWarningDataColumns();
+    void _runCloseWarningMatrixRow();
+
     /// Returns the Plan view's PlanMasterController, or nullptr (after recording
     /// a test failure) if it cannot be reached.
     PlanMasterController *_planViewMasterController();

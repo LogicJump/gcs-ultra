@@ -62,6 +62,7 @@ void ComponentInformationCacheTest::_basic_test()
     QVERIFY(f.open(QFile::ReadOnly | QFile::Text));
     QTextStream in(&f);
     QVERIFY(in.readAll() == _tmpFiles[0].content);
+    f.close();
     _cleanup();
 }
 

@@ -108,21 +108,30 @@ void BluetoothWorkerTest::_testWriteWhileDisconnectedEmitsError()
 
 void BluetoothWorkerTest::_testConnectWhileConnectedWarns()
 {
+    class ConnectedBleWorker : public BluetoothBleWorker
+    {
+    public:
+        explicit ConnectedBleWorker(const BluetoothConfiguration* configuration)
+            : BluetoothBleWorker(configuration)
+        {
+            _connected = true;
+        }
+
+        bool connectAttempted = false;
+
+    protected:
+        void onConnectLink() override { connectAttempted = true; }
+    };
+
     BluetoothConfiguration config("TestBT_doubleConnect");
-
-    // Use BLE worker — Classic would attempt a real socket
     config.setMode(BluetoothConfiguration::BluetoothMode::ModeLowEnergy);
-    std::unique_ptr<BluetoothWorker> worker(BluetoothWorker::create(&config));
+    ConnectedBleWorker worker(&config);
 
-    // Force _connected = true via connectLink/disconnect cycle isn't possible without
-    // real hardware, but we can verify the guard path doesn't crash.
-    // First connect attempt will fail (no device), but should not crash.
-    worker->connectLink();
-    // Second call exercises the "already connected" guard when _connected is false —
-    // it just proceeds, which is fine.
-    worker->connectLink();
-
-    QVERIFY2(true, "double connectLink must not crash");
+    expectLogMessage("Comms.Bluetooth.BluetoothWorker", QtWarningMsg, QRegularExpression("Already connected to"));
+    worker.connectLink();
+    verifyExpectedLogMessage();
+    QVERIFY(worker.isConnected());
+    QVERIFY(!worker.connectAttempted);
 }
 
 void BluetoothWorkerTest::_testDisconnectResetsReconnectState()

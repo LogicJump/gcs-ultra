@@ -305,6 +305,10 @@ void QGCFileHelperTest::_testToLocalPathPlainPaths()
     // Plain paths should pass through unchanged
     QCOMPARE(QGCFileHelper::toLocalPath("/path/to/file.txt"), QString("/path/to/file.txt"));
     QCOMPARE(QGCFileHelper::toLocalPath("relative/path.txt"), QString("relative/path.txt"));
+#ifdef Q_OS_WIN
+    QCOMPARE(QGCFileHelper::toLocalPath("C:/path/to/file.txt"), QString("C:/path/to/file.txt"));
+    QCOMPARE(QGCFileHelper::toLocalPath("C:\\path\\to\\file.txt"), QString("C:\\path\\to\\file.txt"));
+#endif
     QCOMPARE(QGCFileHelper::toLocalPath(""), QString(""));
     // Qt resource paths should pass through
     QCOMPARE(QGCFileHelper::toLocalPath(":/resource/path"), QString(":/resource/path"));
@@ -363,6 +367,10 @@ void QGCFileHelperTest::_testIsLocalPath()
     // Local paths
     QVERIFY(QGCFileHelper::isLocalPath("/path/to/file"));
     QVERIFY(QGCFileHelper::isLocalPath("relative/path"));
+#ifdef Q_OS_WIN
+    QVERIFY(QGCFileHelper::isLocalPath("C:/path/to/file.txt"));
+    QVERIFY(QGCFileHelper::isLocalPath("C:\\path\\to\\file.txt"));
+#endif
     QVERIFY(QGCFileHelper::isLocalPath(":/resource/path"));
     QVERIFY(QGCFileHelper::isLocalPath("file:///path/to/file"));
     QVERIFY(QGCFileHelper::isLocalPath("qrc:/resource"));

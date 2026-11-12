@@ -5,6 +5,8 @@ include("${CMAKE_CURRENT_LIST_DIR}/../SdkState.cmake")
 include("${CMAKE_CURRENT_LIST_DIR}/../platform/Windows.cmake")
 
 qgc_test_sandbox(_sandbox "windows-sdk-root${TEST_CASE}")
+# Keep checkout-path spaces out of the SDK lookup cases.
+file(RELATIVE_PATH _sandbox "${CMAKE_CURRENT_BINARY_DIR}" "${_sandbox}")
 
 # An SDK the user names in GStreamer_ROOT_DIR is never replaced by a download: one discovery can't use fails configure.
 if(TEST_CASE STREQUAL "explicit-incomplete" OR TEST_CASE STREQUAL "explicit-old")

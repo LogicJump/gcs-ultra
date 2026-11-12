@@ -48,7 +48,7 @@ bool AppCloseWarningUITest::_forcePlanViewMissionDirty()
     return true;
 }
 
-void AppCloseWarningUITest::_testCloseWarningMatrix_data()
+void AppCloseWarningUITest::_addCloseWarningDataColumns()
 {
     // Each row sets up some combination of the three close-warning conditions and
     // chooses where to reject. The three dialogs always appear in the fixed order
@@ -68,28 +68,48 @@ void AppCloseWarningUITest::_testCloseWarningMatrix_data()
     QTest::addColumn<bool>("pendingWrites");
     QTest::addColumn<bool>("connection");
     QTest::addColumn<int>("rejectAtStep");
+}
 
+void AppCloseWarningUITest::_testCloseWarningNoMissionNoPending_data()
+{
+    _addCloseWarningDataColumns();
     // No conditions: closing must proceed immediately with no warning dialog.
     QTest::newRow("none-acceptAll")            << false << false << false << 0;
 
     // Connection only.
     QTest::newRow("C-acceptAll")               << false << false << true  << 0;
     QTest::newRow("C-rejectConnection")        << false << false << true  << 1;
+}
 
+void AppCloseWarningUITest::_testCloseWarningPendingNoMission_data()
+{
+    _addCloseWarningDataColumns();
     // Pending writes + connection.
     QTest::newRow("PC-acceptAll")              << false << true  << true  << 0;
     QTest::newRow("PC-rejectPending")          << false << true  << true  << 1;
     QTest::newRow("PC-rejectConnection")       << false << true  << true  << 2;
+}
 
+void AppCloseWarningUITest::_testCloseWarningMissionOnly_data()
+{
+    _addCloseWarningDataColumns();
     // Mission only (offline, no connection).
     QTest::newRow("M-acceptAll")               << true  << false << false << 0;
     QTest::newRow("M-rejectMission")           << true  << false << false << 1;
+}
 
+void AppCloseWarningUITest::_testCloseWarningMissionWithConnection_data()
+{
+    _addCloseWarningDataColumns();
     // Mission + connection.
     QTest::newRow("MC-acceptAll")              << true  << false << true  << 0;
     QTest::newRow("MC-rejectMission")          << true  << false << true  << 1;
     QTest::newRow("MC-rejectConnection")       << true  << false << true  << 2;
+}
 
+void AppCloseWarningUITest::_testCloseWarningMissionWithPendingWrites_data()
+{
+    _addCloseWarningDataColumns();
     // Mission + pending writes + connection (all three dialogs).
     QTest::newRow("MPC-acceptAll")             << true  << true  << true  << 0;
     QTest::newRow("MPC-rejectMission")         << true  << true  << true  << 1;
@@ -97,7 +117,32 @@ void AppCloseWarningUITest::_testCloseWarningMatrix_data()
     QTest::newRow("MPC-rejectConnection")      << true  << true  << true  << 3;
 }
 
-void AppCloseWarningUITest::_testCloseWarningMatrix()
+void AppCloseWarningUITest::_testCloseWarningNoMissionNoPending()
+{
+    _runCloseWarningMatrixRow();
+}
+
+void AppCloseWarningUITest::_testCloseWarningPendingNoMission()
+{
+    _runCloseWarningMatrixRow();
+}
+
+void AppCloseWarningUITest::_testCloseWarningMissionOnly()
+{
+    _runCloseWarningMatrixRow();
+}
+
+void AppCloseWarningUITest::_testCloseWarningMissionWithConnection()
+{
+    _runCloseWarningMatrixRow();
+}
+
+void AppCloseWarningUITest::_testCloseWarningMissionWithPendingWrites()
+{
+    _runCloseWarningMatrixRow();
+}
+
+void AppCloseWarningUITest::_runCloseWarningMatrixRow()
 {
     QFETCH(bool, mission);
     QFETCH(bool, pendingWrites);

@@ -40,9 +40,10 @@ bool waitForText(QQuickItem* item, const QString& expected, int timeoutMs)
 }
 
 /// The SensorsComponentController behind the calibration panel, whose progress the firmware drives
-QObject* panelController(QQuickItem* panel)
+SensorsComponentController* panelController(QQuickItem* panel)
 {
-    return panel ? panel->property("sensorsController").value<QObject*>() : nullptr;
+    return panel ? qobject_cast<SensorsComponentController*>(panel->property("sensorsController").value<QObject*>())
+                 : nullptr;
 }
 
 const char *calStateName(int state)
@@ -60,6 +61,9 @@ const char *calStateName(int state)
 
 void PX4SensorsCalibrationUITest::_navigateToSensorsPanel()
 {
+    const std::optional<bool> rhiBased = expectSoftwareBackendWarnings(/*strict*/ false);
+    QVERIFY2(rhiBased.has_value(), "No renderer interface on the main window");
+
     navigateToConfigureView();
     if (QTest::currentTestFailed()) return;
 
@@ -333,10 +337,21 @@ void PX4SensorsCalibrationUITest::_runCalibrationCancelTest(const QString& calib
             const PoseInfo& info = kPoses[0];
             QQuickItem* side = findVisibleItem(_rootItem, QLatin1String(info.objectName), 5000);
             QVERIFY2(side, "Pose indicator not visible after calibration start");
+            QQuickItem* panel = findVisibleItem(_rootItem, QStringLiteral("sensors_calibrationPanel"), 2000);
+            SensorsComponentController* controller = panelController(panel);
+            QVERIFY2(controller, "Calibration panel not visible during calibration");
 
+            bool inProgressObserved = false;
+            const QMetaObject::Connection stateConnection =
+                connect(controller, &SensorsComponentController::orientationCalSidesStateChanged, side, [&] {
+                    if (side->property("calState").toInt() == SensorsComponentController::SideCalStateInProgress) {
+                        inProgressObserved = true;
+                    }
+                });
             mockLink->setCalibrationPose(info.pose);
-            QVERIFY2(waitForCalState(side, SensorsComponentController::SideCalStateInProgress, 5000),
-                     "Side never went in-progress");
+            const bool reachedInProgress = QTest::qWaitFor([&] { return inProgressObserved; }, 5000);
+            disconnect(stateConnection);
+            QVERIFY2(reachedInProgress, "Side never went in-progress");
 
             // Cancel mid-calibration: MockLink responds with "[cal] calibration cancelled"
             QQuickItem* cancelButton = findVisibleItem(_rootItem, QStringLiteral("sensorsSetup_cancelCalibration"));
@@ -419,7 +434,7 @@ void PX4SensorsCalibrationUITest::_testAccelCalibration()
             }
 
             QQuickItem* panel = findVisibleItem(_rootItem, QStringLiteral("sensors_calibrationPanel"), 2000);
-            QObject* controller = panelController(panel);
+            SensorsComponentController* controller = panelController(panel);
             QVERIFY2(controller, "Calibration panel not visible during calibration");
             const auto progress = [&] { return controller->property("calibrationProgress").toDouble(); };
             QVERIFY2(qFuzzyIsNull(progress()), "Progress not at 0 at calibration start");
@@ -431,6 +446,8 @@ void PX4SensorsCalibrationUITest::_testAccelCalibration()
             QQuickItem* cancelButton =
                 findVisibleItem(_rootItem, QStringLiteral("sensorsSetup_cancelCalibration"), 2000);
             QVERIFY2(cancelButton, "Cancel button not visible during calibration");
+            QQuickItem* stage = findVisibleItem(_rootItem, QStringLiteral("sensorsCal_stage"), 2000);
+            QVERIFY2(stage, "Calibration stage not visible during calibration");
 
             // ---------------------------------------------------------------------
             // Place the vehicle into each pose and watch the UI track the side
@@ -442,17 +459,28 @@ void PX4SensorsCalibrationUITest::_testAccelCalibration()
                 QQuickItem* side = findVisibleItem(_rootItem, sideName);
                 QVERIFY2(side, qPrintable(QStringLiteral("Pose indicator disappeared: %1").arg(sideName)));
 
-                mockLink->setCalibrationPose(info.pose);
-
                 // Orientation detected: the side goes InProgress. Unlike mag cal the
-                // vehicle must be held still, so the static (non-rotating) image stays up
-                QVERIFY2(waitForCalState(side, SensorsComponentController::SideCalStateInProgress, 5000),
+                // vehicle must be held still, so capture the transient UI state in the
+                // controller's notify callback before a queued completion can supersede it.
+                bool inProgressObserved = false;
+                bool stageHeldStill = false;
+                const QMetaObject::Connection stateConnection =
+                    connect(controller, &SensorsComponentController::orientationCalSidesStateChanged, side, [&] {
+                        if (side->property("calState").toInt() != SensorsComponentController::SideCalStateInProgress) {
+                            return;
+                        }
+                        inProgressObserved = true;
+                        stageHeldStill = stage->property("side").toString() == QLatin1String(info.sideId) &&
+                                         !stage->property("rotating").toBool() &&
+                                         stage->property("instruction").toString() == QLatin1String("Hold still");
+                    });
+                mockLink->setCalibrationPose(info.pose);
+                const bool reachedInProgress = QTest::qWaitFor([&] { return inProgressObserved; }, 5000);
+                disconnect(stateConnection);
+                QVERIFY2(reachedInProgress,
                          qPrintable(QStringLiteral("Side never went in-progress: %1").arg(sideName)));
-                QQuickItem* stage = findVisibleItem(_rootItem, QStringLiteral("sensorsCal_stage"));
                 QVERIFY2(
-                    stage && stage->property("side").toString() == QLatin1String(info.sideId) &&
-                        !stage->property("rotating").toBool() &&
-                        stage->property("instruction").toString() == QLatin1String("Hold still"),
+                    stageHeldStill,
                     qPrintable(QStringLiteral("The stage does not show the vehicle held still on %1").arg(sideName)));
 
                 // Side completes and marks itself done
@@ -615,6 +643,8 @@ void PX4SensorsCalibrationUITest::_testInlineCalibration()
                      "The calibration result was not stored");
             QVERIFY2(!findVisibleItem(_rootItem, QStringLiteral("sensorsSetup_cancelCalibration"), 0),
                      "Calibration panel shown after calibrating");
+
+            waitForParamRefreshQuiet(vehicle);
         });
 }
 
@@ -882,5 +912,7 @@ void PX4SensorsCalibrationUITest::_testLargeVehicleCalibration()
                     [&] { return !findVisibleItem(_rootItem, QStringLiteral("sensorsSetup_startCalibration"), 0); },
                     5000),
                 "The ready screen is still shown after Cancel");
+
+            waitForParamRefreshQuiet(vehicle);
         });
 }

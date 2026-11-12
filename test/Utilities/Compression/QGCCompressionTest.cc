@@ -16,6 +16,10 @@
 #include <QtCore/QWaitCondition>
 #include <QtTest/QSignalSpy>
 
+#ifdef Q_OS_WIN
+#include <QtCore/qt_windows.h>
+#endif
+
 #include <algorithm>
 #include <atomic>
 #include <initializer_list>
@@ -1310,9 +1314,22 @@ void QGCCompressionTest::_testExtractArchiveToSymlinkedOutputPath()
     const QString symlinkOutputDir = tempDir.path() + "/symlink_alias_output";
     QVERIFY(QDir().mkpath(realOutputDir));
     QFile::remove(symlinkOutputDir);
+#ifdef Q_OS_WIN
+    const bool linked =
+        CreateSymbolicLinkW(symlinkOutputDir.toStdWString().c_str(), realOutputDir.toStdWString().c_str(),
+                            SYMBOLIC_LINK_FLAG_DIRECTORY | SYMBOLIC_LINK_FLAG_ALLOW_UNPRIVILEGED_CREATE);
+    if (!linked) {
+        const DWORD error = GetLastError();
+        if (error == ERROR_PRIVILEGE_NOT_HELD || error == ERROR_NOT_SUPPORTED) {
+            QSKIP("Directory symlinks require Windows privileges or filesystem support.");
+        }
+        QVERIFY2(linked, qPrintable(QStringLiteral("CreateSymbolicLinkW failed: %1").arg(error)));
+    }
+#else
     if (!QFile::link(realOutputDir, symlinkOutputDir)) {
         QSKIP(qPrintable(QStringLiteral("Directory symlinks are not supported in this environment")));
     }
+#endif
 
     QFileInfo symlinkInfo(symlinkOutputDir);
     QVERIFY(symlinkInfo.isSymLink());

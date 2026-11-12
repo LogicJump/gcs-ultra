@@ -102,7 +102,12 @@ add_qgc_test(GstVideoReceiverRecordingTest LABELS Integration)
 add_qgc_test(GstVideoReceiverStatsTest LABELS Integration)
 # Needs Qt on EGL, which the offscreen QPA lacks: xcb with xcb_egl, falling back to offscreen (and skipping) without an
 # X display.
-set(_qgc_gl_readback_env ENV_MODIFICATION "QT_QPA_PLATFORM=cmake_list_prepend:xcb" "QT_XCB_GL_INTEGRATION=set:xcb_egl")
+set(_qgc_gl_readback_env)
+if(LINUX)
+    set(_qgc_gl_readback_env ENV_MODIFICATION "QT_QPA_PLATFORM=cmake_list_prepend:xcb"
+                             "QT_XCB_GL_INTEGRATION=set:xcb_egl"
+    )
+endif()
 add_qgc_test(GstHwBuffersGlReadbackTest LABELS Integration GPU ${_qgc_gl_readback_env})
 
 # The GstHarness tests need gst-check, which the GStreamer layer finds only for test builds and only where the SDK or

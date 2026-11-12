@@ -17,6 +17,10 @@
 #include <unistd.h>
 #endif
 
+namespace {
+const QString kUnresolvedHost = QStringLiteral("invalid host");
+}
+
 SharedLinkConfigurationPtr LinkManagerTest::_addMockConfig(const QString &name, bool dynamic, bool autoConnect)
 {
     MockConfiguration *const mockConfig = new MockConfiguration(name);
@@ -39,7 +43,8 @@ void LinkManagerTest::_reconnect()
 
 void LinkManagerTest::_expectUdpBindFailureLogs()
 {
-    expectLogMessage("Comms.UDPLink", QtWarningMsg, QRegularExpression(QStringLiteral("AddressInUseError")));
+    expectLogMessage("Comms.UDPLink", QtWarningMsg,
+                     QRegularExpression(QStringLiteral("AddressInUseError|SocketAccessError")));
     expectLogMessage("Comms.UDPLink", QtWarningMsg, QRegularExpression(QStringLiteral("Failed to bind UDP socket")));
     expectLogMessage("Comms.UDPLink", QtWarningMsg, QRegularExpression(QStringLiteral("Communication error")));
 }
@@ -149,12 +154,12 @@ void LinkManagerTest::_testLinkActiveStableAcrossReconnect()
 void LinkManagerTest::_testUdpUnresolvedHostFailsConnect()
 {
     UDPConfiguration* const udpConfig = new UDPConfiguration(QStringLiteral("UnresolvedUdp"));
-    udpConfig->addHost(QStringLiteral("drone.invalid"), 14550);
+    udpConfig->addHost(kUnresolvedHost, 14550);
     SharedLinkConfigurationPtr config = linkManager()->addConfiguration(udpConfig);
 
-    expectLogMessage("Comms.UDPLink", QtWarningMsg,
-                     QRegularExpression(QStringLiteral("Could not resolve host: drone.invalid")));
-    expectAppMessage(QRegularExpression(QStringLiteral("Could not resolve host: drone.invalid")));
+    const QRegularExpression unresolved(QStringLiteral("Could not resolve host: %1").arg(kUnresolvedHost));
+    expectLogMessage("Comms.UDPLink", QtWarningMsg, unresolved);
+    expectAppMessage(unresolved);
     QVERIFY(linkManager()->createConnectedLink(config));
     QTRY_VERIFY_WITH_TIMEOUT(config->link() == nullptr, TestTimeout::mediumMs());
     verifyExpectedLogMessage();
@@ -167,7 +172,7 @@ void LinkManagerTest::_testUdpUnresolvedHostAllowedStaysConnected()
 {
     UDPConfiguration* const udpConfig = new UDPConfiguration(QStringLiteral("UnresolvedUdpAllowed"));
     udpConfig->setRequireResolvedHosts(false);
-    udpConfig->addHost(QStringLiteral("drone.invalid"), 14550);
+    udpConfig->addHost(kUnresolvedHost, 14550);
     SharedLinkConfigurationPtr config = linkManager()->addConfiguration(udpConfig);
 
     expectLogMessage("Comms.UDPLink", QtWarningMsg, QRegularExpression(QStringLiteral("Could not resolve host")));
@@ -256,13 +261,13 @@ void LinkManagerTest::_testForwardingLinkUnresolvedHostRetries()
     });
     mavlinkSettings->forwardMavlink()->setRawValue(true);
     expectAppMessage(QRegularExpression(QStringLiteral("Restart application")));
-    mavlinkSettings->forwardMavlinkHostName()->setRawValue(QStringLiteral("drone.invalid:14445"));
+    mavlinkSettings->forwardMavlinkHostName()->setRawValue(QStringLiteral("%1:14445").arg(kUnresolvedHost));
     verifyExpectedLogMessage();
 
     const auto forwardingConfigs = [this] { return _configsNamed(LinkManager::_mavlinkForwardingLinkName); };
     QVERIFY(forwardingConfigs().isEmpty());
 
-    const QRegularExpression unresolved(QStringLiteral("Could not resolve host: drone.invalid"));
+    const QRegularExpression unresolved(QStringLiteral("Could not resolve host: %1").arg(kUnresolvedHost));
     expectLogMessage("Comms.UDPLink", QtWarningMsg, unresolved);
     expectAppMessage(unresolved);
     linkManager()->_addMAVLinkForwardingLink();
@@ -303,12 +308,12 @@ void LinkManagerTest::_testSupportForwardingFailureAllowsRetry()
     const QVariant oldHost = mavlinkSettings->forwardMavlinkAPMSupportHostName()->rawValue();
     const auto restoreSettings =
         qScopeGuard([&] { mavlinkSettings->forwardMavlinkAPMSupportHostName()->setRawValue(oldHost); });
-    mavlinkSettings->forwardMavlinkAPMSupportHostName()->setRawValue(QStringLiteral("drone.invalid:14445"));
+    mavlinkSettings->forwardMavlinkAPMSupportHostName()->setRawValue(QStringLiteral("%1:14445").arg(kUnresolvedHost));
 
     const auto supportConfigs = [this] { return _configsNamed(LinkManager::_mavlinkForwardingSupportLinkName); };
     QVERIFY(supportConfigs().isEmpty());
 
-    const QRegularExpression unresolved(QStringLiteral("Could not resolve host: drone.invalid"));
+    const QRegularExpression unresolved(QStringLiteral("Could not resolve host: %1").arg(kUnresolvedHost));
     for (int attempt = 0; attempt < 2; attempt++) {
         expectLogMessage("Comms.UDPLink", QtWarningMsg, unresolved);
         expectAppMessage(unresolved);

@@ -131,4 +131,4 @@ void JsonResourceAuditTest::_allResourceJsonParsesClean_test()
         qPrintable(QStringLiteral("Warnings parsing resource JSON:\n  %1").arg(failures.join(QStringLiteral("\n  ")))));
 }
 
-UT_REGISTER_TEST(JsonResourceAuditTest, TestLabel::Unit, TestLabel::Utilities)
+UT_REGISTER_TEST(JsonResourceAuditTest, TestLabel::Unit, TestLabel::Utilities, TestLabel::Slow)

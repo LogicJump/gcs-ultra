@@ -5,6 +5,7 @@
 #include <chrono>
 #include <memory>
 #include <span>
+#include <utility>
 #include <vector>
 
 #include <QtCore/QRegularExpression>
@@ -71,6 +72,25 @@ public:
 constexpr GPSReceiverFamily UBX_STREAM_FAMILY{
     .type = GPSType::ublox,
     .stream = {.framers = GPSFrameKind::UBX | GPSFrameKind::RTCM3, .enabled = GPSFrameKind::UBX | GPSFrameKind::RTCM3}};
+
+QGCTest::AllocationTracker::Counts batchHandoffBookkeepingAllocations(std::size_t iterations)
+{
+    GPSEventBatch context;
+    context.events.reserve(2);
+    QGCTest::AllocationTracker::Counts allocations;
+    {
+        QGCTest::AllocationTracker tracker;
+        for (std::size_t iteration = 0; iteration < iterations; ++iteration) {
+            auto delivered = std::exchange(context, GPSEventBatch{});
+            delivered.events.clear();
+            if (context.events.empty() && context.events.capacity() < delivered.events.capacity()) {
+                context.events.swap(delivered.events);
+            }
+        }
+        allocations = tracker.counts();
+    }
+    return allocations;
+}
 
 }  // namespace
 
@@ -233,7 +253,12 @@ void GPSProtocolRuntimeTest::_steadyStateDecodeDoesNotAllocate()
     }
     QCOMPARE(positions, ITERATIONS);
     // The tracker cannot see QByteArray's malloc, so the one block per RTCM3 frame is counted through ownership.
-    QCOMPARE(allocations.calls, size_t{0});
+    // MSVC's Debug STL allocates iterator-proxy objects even while moving empty vectors. Measure that batch-handoff
+    // bookkeeping separately so any allocation beyond it, including vector growth, still fails on every platform.
+    const auto bookkeeping = batchHandoffBookkeepingAllocations(ITERATIONS);
+    QCOMPARE(allocations.calls, bookkeeping.calls);
+    QCOMPARE(allocations.bytes, bookkeeping.bytes);
+    QCOMPARE(allocations.largest, bookkeeping.largest);
     QCOMPARE(ownedFrames, ITERATIONS);
     const auto owned = driver.decode(nextEpoch());
     const auto timestamp = now;

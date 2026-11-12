@@ -555,8 +555,9 @@ else()
     set(_qgc_translation_embedding QM_FILES_OUTPUT_VARIABLE _qgc_qm_files)
 endif()
 
+# All translatable targets exist here; an immediate call preserves paths containing spaces.
 qt_add_translations(
-    ${CMAKE_PROJECT_NAME}
+    ${CMAKE_PROJECT_NAME} IMMEDIATE_CALL
     TS_FILES
         ${TS_SOURCES}
         ${_qgc_translation_embedding}

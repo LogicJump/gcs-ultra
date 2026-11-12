@@ -16,10 +16,13 @@ function(_qgc_gst_find_apple_pkg_config out_var)
 endfunction()
 
 qgc_test_sandbox(_sandbox android-sdk-extract)
+# The ABI extraction cases must not inherit the checkout path's SDK space restriction.
+file(RELATIVE_PATH _sandbox "${CMAKE_CURRENT_BINARY_DIR}" "${_sandbox}")
 set(CPM_SOURCE_CACHE "${_sandbox}/cache")
 set(QGC_GST_REQUESTED_VERSION 9.9.2)
 set(_cache_dir "${CPM_SOURCE_CACHE}/gstreamer-android-${QGC_GST_REQUESTED_VERSION}")
 set(_archive "${_cache_dir}/gstreamer-android-${QGC_GST_REQUESTED_VERSION}.tar.xz")
+cmake_path(ABSOLUTE_PATH _archive OUTPUT_VARIABLE _archive)
 
 set(_abi_dirs armv7 arm64 x86 x86_64)
 foreach(_abi_dir IN LISTS _abi_dirs)
@@ -55,10 +58,11 @@ foreach(_case IN ITEMS "x86|x86" "x86_64|x86_64" "arm64-v8a|arm64")
 endforeach()
 
 # Only the ABIs that were built are extracted, and each one exactly once.
+cmake_path(ABSOLUTE_PATH _cache_dir OUTPUT_VARIABLE _absolute_cache_dir)
 file(
     GLOB _published
-    RELATIVE "${_cache_dir}"
-    "${_cache_dir}/*/.complete"
+    RELATIVE "${_absolute_cache_dir}"
+    "${_absolute_cache_dir}/*/.complete"
 )
 list(SORT _published)
 qgc_test_assert_streq("published trees" "arm64/.complete;x86/.complete;x86_64/.complete" "${_published}")

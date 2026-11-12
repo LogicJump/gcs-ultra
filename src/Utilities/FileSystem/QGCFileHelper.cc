@@ -282,6 +282,13 @@ QString toLocalPath(const QString &urlOrPath)
         return urlOrPath;
     }
 
+#ifdef Q_OS_WIN
+    // A drive letter is part of the filesystem path, not a URL scheme.
+    if (QFileInfo(urlOrPath).isAbsolute()) {
+        return urlOrPath;
+    }
+#endif
+
     // Check if it's a URL (handles qrc:// -> :/ conversion)
     QUrl url(urlOrPath);
     if (url.isValid() && !url.scheme().isEmpty()) {
@@ -339,6 +346,12 @@ bool isLocalPath(const QString &urlOrPath)
     if (isQtResource(urlOrPath)) {
         return true;
     }
+
+#ifdef Q_OS_WIN
+    if (QFileInfo(urlOrPath).isAbsolute()) {
+        return true;
+    }
+#endif
 
     // Check if it looks like a URL
     QUrl url(urlOrPath);

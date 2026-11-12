@@ -18,4 +18,4 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_
 
 add_qgc_test(JsonHelperTest LABELS Unit Utilities)
 add_qgc_test(JsonParsingTest LABELS Unit Utilities)
-add_qgc_test(JsonResourceAuditTest LABELS Unit Utilities)
+add_qgc_test(JsonResourceAuditTest LABELS Unit Utilities Slow)

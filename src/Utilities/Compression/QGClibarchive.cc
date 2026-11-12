@@ -467,7 +467,12 @@ bool extractArchiveEntries(struct archive* a, const QString& outputDirectoryPath
         }
         // Note: symlinks don't have meaningful permissions on most systems
 
+#ifdef Q_OS_WIN
+        // The Windows disk writer consumes UTF-16 paths; narrow paths use the active code page.
+        archive_entry_copy_pathname_w(entry, outputPath.toStdWString().c_str());
+#else
         archive_entry_set_pathname(entry, outputPath.toUtf8().constData());
+#endif
 
         // Create parent directories and track newly created ones
         trackAndCreateParentDirs(outputPath, canonicalOutputDir, existingDirs, createdDirs);

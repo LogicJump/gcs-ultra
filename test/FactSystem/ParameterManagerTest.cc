@@ -158,9 +158,11 @@ void ParameterManagerTest::_requestListNoResponse()
     expectAppMessage(QRegularExpression("did not respond to request for parameters"));
     expectLogMessage("FactSystem.ParameterManager", QtWarningMsg,
                      QRegularExpression("did not respond to request for parameters"));
-    // ParameterManager exhausts initial request retries in bounded test intervals and gives up
-    // without any progress bar updates or a parameter ready signal.
-    QVERIFY_SIGNAL_WAIT(spyRequestFailed, ParameterManager::kTestMaxInitialRequestTimeMs);
+    // PX4 tries _HASH_CHECK and param.pck before the bounded PARAM_REQUEST_LIST retries. Match the complete
+    // failure-path budget used by HashCheckTest::BothTimersExhaust, including scheduling margin for the FTP fallback.
+    const int maxWaitMs = ParameterManager::kTestHashCheckTimeoutMs + ParameterManager::kTestMaxInitialRequestTimeMs +
+                          TestTimeout::shortMs();
+    QVERIFY_SIGNAL_WAIT(spyRequestFailed, maxWaitMs);
     QCOMPARE(spyProgress.count(), 0);
     QCOMPARE(spyParamsReady.count(), 0);
     verifyExpectedLogMessage();

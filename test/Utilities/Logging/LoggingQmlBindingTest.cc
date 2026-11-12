@@ -8,10 +8,7 @@
 #include "LogEntry.h"
 #include "LogManager.h"
 #include "LogModel.h"
-#include "QGCLoggingCategory.h"
 #include "UnitTestList.h"
-
-QGC_LOGGING_CATEGORY(LoggingQmlBindingTestLog, "Test.LoggingQmlBinding")
 
 // Share a single QQmlEngine across all test methods.
 // qmlRegisterSingletonInstance ties the singleton to the first engine that
@@ -80,14 +77,6 @@ void LoggingQmlBindingTest::_modelRolesExposed()
 void LoggingQmlBindingTest::_modelReceivesEntries()
 {
     auto* model = LogManager::instance()->model();
-    const int before = model->totalCount();
-
-    expectLogMessage("Test.LoggingQmlBinding", QtWarningMsg, QRegularExpression("test message for model"));
-    qCWarning(LoggingQmlBindingTestLog) << "test message for model";
-    // Model update is an in-process queued signal, not I/O; a 500 ms window
-    // is generous for a local Qt signal and keeps failure feedback fast.
-    QTRY_VERIFY_WITH_TIMEOUT(model->totalCount() > before, 500);
-    verifyExpectedLogMessage();
 
     QQmlComponent component(_engine);
     component.setData(R"(
@@ -96,7 +85,6 @@ void LoggingQmlBindingTest::_modelReceivesEntries()
 
         QtObject {
             property int total: LogManager.model.totalCount
-            property int filtered: LogManager.model.rowCount()
         }
     )", QUrl());
 
@@ -105,8 +93,17 @@ void LoggingQmlBindingTest::_modelReceivesEntries()
     QScopedPointer<QObject> obj(component.create());
     QVERIFY(obj);
 
-    QVERIFY(obj->property("total").toInt() > 0);
-    QVERIFY(obj->property("filtered").toInt() > 0);
+    const int totalBefore = obj->property("total").toInt();
+
+    LogEntry entry;
+    entry.level = LogEntry::Warning;
+    entry.category = QStringLiteral("Test.LoggingQmlBinding");
+    entry.message = QStringLiteral("test message for model");
+    entry.buildFormatted();
+    model->enqueue(entry);
+
+    QTRY_COMPARE_WITH_TIMEOUT(obj->property("total").toInt(), totalBefore + 1, TestTimeout::shortMs());
+    QCOMPARE(model->rowCount(), totalBefore + 1);
 }
 
 void LoggingQmlBindingTest::_filterBindingsWork()

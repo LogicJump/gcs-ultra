@@ -37,6 +37,11 @@ qgc_add_cmake_contract_test(QmlCodegenConfigureListOutputs qml-codegen-configure
 qgc_add_cmake_contract_test(QGCTestTimeoutZero qgc-test-timeout-zero)
 qgc_add_cmake_contract_test(QGCTestShards qgc-test-shards)
 
+set_tests_properties(
+    CMake.CoverageProjectTargets CMake.CoverageCleanWithoutGcovr CMake.SanitizerProjectTargets
+    PROPERTIES SKIP_REGULAR_EXPRESSION "QGC_TEST_SKIPPED"
+)
+
 qgc_add_expected_failure_test(
     NAME CMake.CustomDirEscape
     EXPECTED_REGEX "QGC_CUSTOM_DIR must be a non-empty path"

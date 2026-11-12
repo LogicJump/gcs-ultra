@@ -31,6 +31,8 @@ endfunction()
 # its executable (the moccache launcher) is newer than the generated files.
 # ----------------------------------------------------------------------------
 function(_qgc_write_if_changed path content)
+    # file(WRITE) translates LF to CRLF on Windows; avoid adding a second carriage return.
+    string(REPLACE "\r\n" "\n" content "${content}")
     if(EXISTS "${path}")
         file(READ "${path}" _existing)
         if(_existing STREQUAL content)

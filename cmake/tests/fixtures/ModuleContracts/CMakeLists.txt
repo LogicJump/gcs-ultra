@@ -9,6 +9,13 @@ if(NOT TEST_CASE)
     message(FATAL_ERROR "TEST_CASE is required")
 endif()
 
+if(TEST_CASE MATCHES "^(coverage-project-targets|coverage-clean-without-gcovr|sanitizer-project-targets)$"
+   AND NOT CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang"
+)
+    message(STATUS "QGC_TEST_SKIPPED: ${TEST_CASE} requires GCC or Clang, found ${CMAKE_CXX_COMPILER_ID}")
+    return()
+endif()
+
 if(TEST_CASE MATCHES "^compiler-warnings-(on|off)$")
     add_executable(${PROJECT_NAME} main.cpp)
     if(CMAKE_MATCH_1 STREQUAL "on")
@@ -211,11 +218,14 @@ if(TEST_CASE STREQUAL "coverage-clean-without-gcovr")
 endif()
 
 if(TEST_CASE STREQUAL "coverage-release-request")
+    set(CMAKE_CONFIGURATION_TYPES "")
     set(CMAKE_BUILD_TYPE
         Release
         CACHE STRING "" FORCE
     )
     set(QGC_ENABLE_COVERAGE ON)
+    set(QGC_COVERAGE_LINE_THRESHOLD 30)
+    set(QGC_COVERAGE_BRANCH_THRESHOLD 20)
     include("${QGC_MODULE_DIR}/modules/Coverage.cmake")
     return()
 endif()
@@ -249,6 +259,7 @@ if(TEST_CASE STREQUAL "sanitizer-project-targets")
 endif()
 
 if(TEST_CASE STREQUAL "sanitizer-release-request")
+    set(CMAKE_CONFIGURATION_TYPES "")
     set(CMAKE_BUILD_TYPE
         Release
         CACHE STRING "" FORCE
@@ -365,6 +376,23 @@ if(TEST_CASE MATCHES "^helpers-")
         file(READ "${_file}" _content)
         if(NOT _content STREQUAL "second\n")
             message(FATAL_ERROR "Changed content was not written: ${_content}")
+        endif()
+        set(_file "${CMAKE_CURRENT_BINARY_DIR}/write-if-changed.cmd")
+        file(REMOVE "${_file}")
+        _qgc_write_if_changed("${_file}" "@echo off\r\n")
+        file(TIMESTAMP "${_file}" _first_mtime "%Y-%m-%dT%H:%M:%S.%f" UTC)
+        _qgc_write_if_changed("${_file}" "@echo off\r\n")
+        file(TIMESTAMP "${_file}" _second_mtime "%Y-%m-%dT%H:%M:%S.%f" UTC)
+        if(NOT _first_mtime STREQUAL _second_mtime)
+            message(FATAL_ERROR "Unchanged CRLF content rewrote the file: ${_first_mtime} -> ${_second_mtime}")
+        endif()
+        file(READ "${_file}" _content HEX)
+        set(_expected_content "406563686f206f66660a")
+        if(CMAKE_HOST_WIN32)
+            set(_expected_content "406563686f206f66660d0a")
+        endif()
+        if(NOT _content STREQUAL _expected_content)
+            message(FATAL_ERROR "Generated line endings are incorrect: ${_content}")
         endif()
     elseif(TEST_CASE STREQUAL "helpers-rcc-launcher")
         # CMake stands in for rcc so the launcher can be executed.
