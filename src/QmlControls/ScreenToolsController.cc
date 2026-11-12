@@ -70,7 +70,11 @@ QString ScreenToolsController::normalFontFamily()
         return QStringLiteral("NanumGothic");
     }
 
+#if defined(Q_OS_WIN)
+    return QGuiApplication::font().family();
+#else
     return QStringLiteral("Open Sans");
+#endif
 }
 
 double ScreenToolsController::defaultFontDescent(int pointSize)

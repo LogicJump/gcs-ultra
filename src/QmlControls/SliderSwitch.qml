@@ -60,7 +60,7 @@ Rectangle {
         height:     _diameter
         width:      _diameter
         radius:     _diameter / 2
-        color:      qgcPal.accent
+        color:      qgcPal.buttonPrimary
 
         QGCColoredImage {
             anchors.centerIn:       parent

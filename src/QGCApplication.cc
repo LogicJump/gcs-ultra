@@ -245,6 +245,20 @@ void QGCApplication::init()
         qCWarning(QGCApplicationLog) << "Could not load /fonts/opensans-demibold font";
     }
 
+#if defined(Q_OS_WIN)
+    const QStringList installedFontFamilies = QFontDatabase::families();
+    QFont uiFont = QFontDatabase::systemFont(QFontDatabase::GeneralFont);
+    if (installedFontFamilies.contains(QStringLiteral("Segoe UI"))) {
+        uiFont.setFamily(QStringLiteral("Segoe UI"));
+    }
+    uiFont.setPointSize(10);
+    setFont(uiFont);
+    if (installedFontFamilies.contains(QStringLiteral("Microsoft YaHei UI"))) {
+        QFontDatabase::addApplicationFallbackFontFamily(QChar::Script_Han, QStringLiteral("Microsoft YaHei UI"));
+    }
+    QQuickWindow::setTextRenderType(QQuickWindow::NativeTextRendering);
+#endif
+
     if (_simpleBootTest) {
         // Since GStreamer builds are so problematic, the simple boot test initializes video and proves that the
         // packaged runtime decodes and records.

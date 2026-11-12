@@ -31,7 +31,7 @@ Item {
     property real defaultFontPointSize:     10
     property real platformFontPointSize:    10
 
-    readonly property real smallFontPointRatio:      0.75
+    readonly property real smallFontPointRatio:      isWindows ? 0.85 : 0.75
     readonly property real mediumFontPointRatio:     1.25
     readonly property real largeFontPointRatio:      1.5
 
@@ -113,7 +113,7 @@ Item {
     property real comboBoxPadding:                  defaultFontPixelWidth
     property real controlVerticalPadding:           Math.round(defaultFontPixelHeight * 0.3)
     property real implicitSliderHeight:             defaultFontPixelHeight
-    property real defaultBorderRadius:              defaultFontPixelWidth / 2
+    property real defaultBorderRadius:              0
 
     // It's not possible to centralize an even number of pixels, checkBoxIndicatorSize should be an odd number to allow centralization
     property real checkBoxIndicatorSize:            2 * Math.floor(defaultFontPixelHeight / 2) + 1

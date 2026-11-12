@@ -71,7 +71,7 @@ QGCPopupDialog {
 
                 background: Rectangle {
                     radius: ScreenTools.defaultFontPixelHeight / 2
-                    color:  pressed || hovered || checked ? QGroundControl.globalPalette.accent: QGroundControl.globalPalette.windowCard
+                    color:  pressed || hovered || checked ? QGroundControl.globalPalette.selectionFill: QGroundControl.globalPalette.windowCard
                 }
 
                 contentItem: Column {

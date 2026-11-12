@@ -1,12 +1,19 @@
 #include "TopLevelViewsTest.h"
 
+#include <algorithm>
+#include <utility>
+
 #include <QtCore/QScopeGuard>
+#include <QtCore/QTemporaryDir>
+#include <QtQml/QQmlContext>
+#include <QtQml/QQmlExpression>
 #include <QtQuick/QQuickItem>
+#include <QtQuick/QQuickWindow>
 #include <QtTest/QTest>
 
-#include <algorithm>
-
+#include "AppSettings.h"
 #include "Fact.h"
+#include "PlanMasterController.h"
 #include "ScreenToolsController.h"
 #include "SettingsManager.h"
 #include "VideoSettings.h"
@@ -104,6 +111,14 @@ static QQuickItem* findFirstVisibleSettingsButton(QQuickItem* root)
     return qScopeGuard([videoSource, savedVideoSource] { videoSource->setRawValue(savedVideoSource); });
 }
 
+[[nodiscard]] static auto setIndoorPaletteWithRestore()
+{
+    Fact* const indoorPalette = SettingsManager::instance()->appSettings()->indoorPalette();
+    const QVariant savedPalette = indoorPalette->rawValue();
+    indoorPalette->setRawValue(1);
+    return qScopeGuard([indoorPalette, savedPalette] { indoorPalette->setRawValue(savedPalette); });
+}
+
 QQuickItem* TopLevelViewsTest::_clickSettingsButton(const QString& pageName)
 {
     const QString objectName = QStringLiteral("settingsButton_") + pageName;
@@ -121,6 +136,171 @@ QQuickItem* TopLevelViewsTest::_clickSettingsButton(const QString& pageName)
         return nullptr;
     }
     return button;
+}
+
+void TopLevelViewsTest::_testDesktopWindowControls()
+{
+#ifndef Q_OS_WIN
+    QSKIP("Integrated window controls are Windows-only");
+#else
+    startUI();
+    if (QTest::currentTestFailed()) {
+        return;
+    }
+
+    QVERIFY2(findVisibleItem(_rootItem, QStringLiteral("window_close")), "Integrated close button is missing");
+    QVERIFY(_window->flags().testFlag(Qt::FramelessWindowHint));
+    QVERIFY(clickButton(QStringLiteral("window_maximize")));
+    QTRY_COMPARE_WITH_TIMEOUT(_window->visibility(), QWindow::Maximized, TestTimeout::shortMs());
+    QVERIFY(clickButton(QStringLiteral("window_maximize")));
+    QTRY_COMPARE_WITH_TIMEOUT(_window->visibility(), QWindow::Windowed, TestTimeout::shortMs());
+
+    QQuickItem* const dragArea = findVisibleItem(_rootItem, QStringLiteral("window_dragArea"));
+    QVERIFY(dragArea);
+    QTest::mouseDClick(_window, Qt::LeftButton, Qt::NoModifier,
+                       dragArea->mapToScene(QPointF(dragArea->width() / 2, dragArea->height() / 2)).toPoint());
+    QTRY_COMPARE_WITH_TIMEOUT(_window->visibility(), QWindow::Maximized, TestTimeout::shortMs());
+    QVERIFY(clickButton(QStringLiteral("window_maximize")));
+    QTRY_COMPARE_WITH_TIMEOUT(_window->visibility(), QWindow::Windowed, TestTimeout::shortMs());
+
+    QVERIFY(clickButton(QStringLiteral("window_minimize")));
+    QTRY_COMPARE_WITH_TIMEOUT(_window->visibility(), QWindow::Minimized, TestTimeout::shortMs());
+    _window->showNormal();
+    QVERIFY(QTest::qWaitForWindowExposed(_window));
+
+    _window->setMinimumWidth(0);
+    _window->setWidth(480);
+    QTRY_COMPARE_WITH_TIMEOUT(_rootItem->width(), qreal(480), TestTimeout::shortMs());
+    QQuickItem* const closeButton = findVisibleItem(_rootItem, QStringLiteral("window_close"));
+    QQuickItem* const compactMenu = findVisibleItem(_rootItem, QStringLiteral("workspace_compactMenu"));
+    QVERIFY(closeButton);
+    QVERIFY(compactMenu);
+    QVERIFY(compactMenu->mapToScene(QPointF(compactMenu->width(), 0)).x() <= closeButton->mapToScene(QPointF()).x());
+    QQmlExpression dirtyMission(qmlContext(_window), _window,
+                                QStringLiteral("planView._planMasterController.missionController.dirty = true"));
+    dirtyMission.evaluate();
+    QVERIFY2(!dirtyMission.hasError(), qPrintable(dirtyMission.error().toString()));
+    QVERIFY(clickButton(QStringLiteral("window_close")));
+    QVERIFY(waitForDialog(QCoreApplication::translate("MainWindow", "Unsaved Mission")));
+    QVERIFY(rejectDialog());
+    QVERIFY(_window->isVisible());
+    QTRY_VERIFY_WITH_TIMEOUT(!_window->property("_reentrantCloseGuard").toBool(), TestTimeout::shortMs());
+    QQmlExpression planController(qmlContext(_window), _window, QStringLiteral("planView._planMasterController"));
+    PlanMasterController* const masterController = planController.evaluate().value<PlanMasterController*>();
+    QVERIFY2(!planController.hasError(), qPrintable(planController.error().toString()));
+    QVERIFY(masterController);
+    QTemporaryDir savedPlan;
+    QVERIFY(savedPlan.isValid());
+    QVERIFY(masterController->saveToFile(savedPlan.filePath(QStringLiteral("window-close-test"))));
+    QVERIFY(!masterController->dirtyForSave());
+    QVERIFY(clickButton(QStringLiteral("window_close")));
+    QTRY_VERIFY_WITH_TIMEOUT(!_window->isVisible(), TestTimeout::shortMs());
+#endif
+}
+
+void TopLevelViewsTest::_testDesktopWindowResizeEdges()
+{
+#ifndef Q_OS_WIN
+    QSKIP("Integrated window resize handles are Windows-only");
+#else
+    startUI();
+    if (QTest::currentTestFailed()) {
+        return;
+    }
+
+    _window->showNormal();
+    QVERIFY(QTest::qWaitForWindowExposed(_window));
+    QTRY_COMPARE_WITH_TIMEOUT(_window->visibility(), QWindow::Windowed, TestTimeout::shortMs());
+
+    QQuickItem* const dragArea = findVisibleItem(_rootItem, QStringLiteral("window_dragArea"));
+    QVERIFY(dragArea);
+    QTest::mouseMove(_window, dragArea->mapToScene(QPointF(dragArea->width() / 2, dragArea->height() / 2)).toPoint());
+    QTRY_COMPARE_WITH_TIMEOUT(_window->cursor().shape(), Qt::ArrowCursor, TestTimeout::shortMs());
+
+    const QList<std::pair<QPoint, Qt::CursorShape>> resizePoints = {
+        {QPoint(_window->width() / 2, 1), Qt::SizeVerCursor},
+        {QPoint(_window->width() / 2, _window->height() - 2), Qt::SizeVerCursor},
+        {QPoint(1, _window->height() / 2), Qt::SizeHorCursor},
+        {QPoint(_window->width() - 2, _window->height() / 2), Qt::SizeHorCursor},
+        {QPoint(1, 1), Qt::SizeFDiagCursor},
+        {QPoint(_window->width() - 2, 1), Qt::SizeBDiagCursor},
+        {QPoint(1, _window->height() - 2), Qt::SizeBDiagCursor},
+        {QPoint(_window->width() - 2, _window->height() - 2), Qt::SizeFDiagCursor},
+    };
+
+    for (const auto& [position, expectedCursor] : resizePoints) {
+        QTest::mouseMove(_window, position);
+        QTRY_COMPARE_WITH_TIMEOUT(_window->cursor().shape(), expectedCursor, TestTimeout::shortMs());
+    }
+#endif
+}
+
+void TopLevelViewsTest::_testWorkspaceNavigation()
+{
+    const auto restorePalette = setIndoorPaletteWithRestore();
+    startUI();
+    if (QTest::currentTestFailed()) {
+        return;
+    }
+
+    QQuickItem* const navigation = findVisibleItem(_rootItem, QStringLiteral("workspaceNavigation"));
+    QVERIFY2(navigation, "Persistent workspace navigation is missing");
+
+    const QStringList workspaces = {QStringLiteral("fly"), QStringLiteral("plan"), QStringLiteral("vehicle"),
+                                    QStringLiteral("analyze"), QStringLiteral("settings")};
+    for (const QString& workspace : workspaces) {
+        QVERIFY2(clickButton(QStringLiteral("workspace_") + workspace), qPrintable(workspace));
+        QTRY_COMPARE_WITH_TIMEOUT(navigation->property("currentWorkspace").toString(), workspace,
+                                  TestTimeout::mediumMs());
+        const QString viewName = workspace == QStringLiteral("fly")    ? QStringLiteral("mainView_fly")
+                                 : workspace == QStringLiteral("plan") ? QStringLiteral("mainView_plan")
+                                                                       : QStringLiteral("mainView_toolDrawer");
+        QQuickItem* const view = findVisibleItem(_rootItem, viewName);
+        QVERIFY2(view, qPrintable(viewName));
+        QTRY_VERIFY2_WITH_TIMEOUT(
+            view->mapToScene(QPointF()).y() >= navigation->mapToScene(QPointF()).y() + navigation->height(),
+            "Workspace content overlaps the navigation bar", TestTimeout::shortMs());
+    }
+
+    QQmlExpression blockNavigation(qmlContext(_window), _window,
+                                   QStringLiteral("globals.navigationBlockedReason = 'Navigation test'"));
+    blockNavigation.evaluate();
+    QVERIFY2(!blockNavigation.hasError(), qPrintable(blockNavigation.error().toString()));
+    const auto restoreNavigation = qScopeGuard([this] {
+        QQmlExpression expression(qmlContext(_window), _window, QStringLiteral("globals.navigationBlockedReason = ''"));
+        expression.evaluate();
+    });
+
+    QVERIFY(clickButton(QStringLiteral("workspace_plan")));
+    QCOMPARE(navigation->property("currentWorkspace").toString(), QStringLiteral("settings"));
+    QVERIFY(findVisibleItem(_rootItem, QStringLiteral("mainView_toolDrawer")));
+}
+
+void TopLevelViewsTest::_testWorkspaceNavigationNarrow()
+{
+    const auto restorePalette = setIndoorPaletteWithRestore();
+    startUI();
+    if (QTest::currentTestFailed()) {
+        return;
+    }
+
+    const int originalWidth = _window->width();
+    const int originalMinimumWidth = _window->minimumWidth();
+    const auto restoreWidth = qScopeGuard([this, originalWidth, originalMinimumWidth] {
+        _window->setMinimumWidth(originalMinimumWidth);
+        _window->setWidth(originalWidth);
+    });
+    _window->setMinimumWidth(0);
+    _window->setWidth(480);
+    QTRY_COMPARE_WITH_TIMEOUT(_rootItem->width(), qreal(480), TestTimeout::shortMs());
+
+    QQuickItem* const menu = findVisibleItem(_rootItem, QStringLiteral("workspace_compactMenu"));
+    QVERIFY2(menu, "Narrow windows must retain the workspace chooser");
+    QVERIFY(clickButton(QStringLiteral("workspace_compactMenu")));
+    QVERIFY(clickButton(QStringLiteral("toolbar_viewPlan")));
+    QVERIFY(findVisibleItem(_rootItem, QStringLiteral("mainView_plan")));
+    QVERIFY(clickButton(QStringLiteral("workspace_returnFly")));
+    QVERIFY(findVisibleItem(_rootItem, QStringLiteral("mainView_fly")));
 }
 
 void TopLevelViewsTest::_testNavigateViews()

@@ -38,7 +38,7 @@ Row {
         width: root._diameter
         height: root._diameter
         radius: root._diameter / 2
-        color: modeMouseArea.pressed ? qgcPal.accent : qgcPal.windowCard
+        color: modeMouseArea.pressed ? qgcPal.selectionFill : qgcPal.windowCard
 
         QGCLabel {
             anchors.centerIn: parent
@@ -64,7 +64,7 @@ Row {
         width: root._diameter
         height: root._diameter
         radius: root._diameter / 2
-        color: compassMouseArea.pressed ? qgcPal.accent : qgcPal.windowCard
+        color: compassMouseArea.pressed ? qgcPal.selectionFill : qgcPal.windowCard
 
         // The face tilts with the camera like Google Earth, foreshortening
         // the needle as the view moves off top-down

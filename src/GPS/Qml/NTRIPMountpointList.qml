@@ -34,7 +34,7 @@ QGCListView {
         width:      ListView.view.width
         height:     mountRow.height + ScreenTools.defaultFontPixelHeight * 0.5
         radius:     ScreenTools.defaultFontPixelHeight * 0.25
-        color:      entry.selected ? qgcPal.accent
+        color:      entry.selected ? qgcPal.selectionFill
                                : entry.index % 2 === 0 ? qgcPal.windowCard : qgcPal.window
 
         RowLayout {

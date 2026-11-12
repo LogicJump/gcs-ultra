@@ -128,7 +128,7 @@ AnalyzePage {
 
                     width:  recordingListView.width
                     height: recordingColumn.height + root._margin
-                    color:  page.selectedPath === recordingDelegate.modelData.path ? qgcPal.accent : qgcPal.windowCard
+                    color:  page.selectedPath === recordingDelegate.modelData.path ? qgcPal.selectionFill : qgcPal.windowCard
                     radius: root._margin / 2
 
                     ColumnLayout {

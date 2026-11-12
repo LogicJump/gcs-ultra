@@ -2,12 +2,14 @@
 
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDeadlineTimer>
+#include <QtCore/QDir>
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QEventLoop>
 #include <QtCore/QRegularExpression>
 #include <QtCore/QScopeGuard>
 #include <QtCore/QVariant>
 #include <QtCore/QtMath>
+#include <QtGui/QImage>
 #include <QtQml/QQmlApplicationEngine>
 #include <QtQml/QQmlIncubationController>
 #include <QtQuick/QQuickItem>
@@ -35,6 +37,20 @@
 // These have no observable completion condition in offscreen mode (the render loop never
 // self-pumps), so we drain events for a fixed, minimal interval instead.
 static constexpr int kSettleDrainMs = 100;
+
+void QmlUITestBase::saveScreenshot(const QString& name)
+{
+    const QString outputPath = qEnvironmentVariable("QGC_UI_SCREENSHOT_DIR");
+    if (outputPath.isEmpty()) {
+        return;
+    }
+    QVERIFY(_window);
+    const QDir outputDirectory(outputPath);
+    QVERIFY(outputDirectory.mkpath(QStringLiteral(".")));
+    const QImage screenshot = _window->grabWindow();
+    QVERIFY(!screenshot.isNull());
+    QVERIFY(screenshot.save(outputDirectory.filePath(name + QStringLiteral(".png"))));
+}
 
 namespace {
 

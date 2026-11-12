@@ -12,7 +12,7 @@ Rectangle {
 
     implicitWidth:  chipLabel.implicitWidth + ScreenTools.defaultFontPixelWidth * 2
     implicitHeight: chipLabel.implicitHeight + ScreenTools.defaultFontPixelHeight * 0.2
-    radius:         height / 2
+    radius:         ScreenTools.defaultBorderRadius
     color:          "transparent"
     border.color:   textColor
 

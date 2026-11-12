@@ -16,8 +16,8 @@ QGCButton {
         border.width:   showBorder ? 1 : 0
         border.color:   qgcPal.textPrimary
         color:          _showHighlight ?
-                            qgcPal.accent :
-                            (primary ? qgcPal.accent : qgcPal.windowCard)
+                            qgcPal.selectionFill :
+                            (primary ? qgcPal.buttonPrimary : qgcPal.windowCard)
     }
 
     contentItem: Item {

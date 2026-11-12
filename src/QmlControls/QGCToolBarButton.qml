@@ -22,9 +22,9 @@ Button {
 
     background: Rectangle {
         anchors.fill:   parent
-        color:          button.checked ? qgcPal.accent : Qt.rgba(0,0,0,0)
-        border.color:   "red"
-        border.width:   QGroundControl.corePlugin.showTouchAreas ? 3 : 0
+        color:          button.checked ? qgcPal.selectionFill : Qt.rgba(0,0,0,0)
+        border.color:   QGroundControl.corePlugin.showTouchAreas ? "red" : qgcPal.accent
+        border.width:   QGroundControl.corePlugin.showTouchAreas ? 3 : (button.activeFocus ? 1 : 0)
     }
 
     contentItem: Row {

@@ -17,7 +17,7 @@ Button {
 
     background: Rectangle {
         anchors.fill:   parent
-        color:          checked ? qgcPal.accent : qgcPal.windowCard
+        color:          checked ? qgcPal.selectionFill : qgcPal.windowCard
     }
 
     property double messageHz:  0

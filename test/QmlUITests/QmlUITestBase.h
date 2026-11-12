@@ -63,6 +63,9 @@ protected:
     /// on return to propagate failures to the calling test slot.
     void startUI();
 
+    /// Exports a rendered window PNG when QGC_UI_SCREENSHOT_DIR is set for a visual review run.
+    void saveScreenshot(const QString& name);
+
     /// Makes the next startUI() load \a replacement wherever the UI loads \a original, so a test can stand in
     /// for a QML file which custom builds override. Overrides are cleared after each test.
     void overrideQmlFile(const QUrl& original, const QUrl& replacement);

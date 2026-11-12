@@ -23,8 +23,9 @@ Button {
     property bool small: false
 
     property alias wrapMode: text.wrapMode
+    property alias elide: text.elide
     property alias horizontalAlignment: text.horizontalAlignment
-    property color backgroundColor: primary ? qgcPal.accent : qgcPal.windowCard
+    property color backgroundColor: primary ? qgcPal.buttonPrimary : qgcPal.windowCard
     property alias textColor: text.color
 
     id: control
@@ -53,8 +54,8 @@ Button {
         radius: backRadius
         implicitWidth: ScreenTools.implicitButtonWidth
         implicitHeight: control.small ? control.implicitContentHeight + control.topPadding + control.bottomPadding : ScreenTools.implicitButtonHeight
-        border.width: showBorder ? 1 : 0
-        border.color: primary || _showHighlight || (control.enabled && control.hovered) ? qgcPal.accent : qgcPal.borderSubtle
+        border.width: showBorder || control.activeFocus ? 1 : 0
+        border.color: primary || _showHighlight || control.activeFocus || (control.enabled && control.hovered) ? qgcPal.accent : qgcPal.borderSubtle
         color: !control._solidFill && control._showHighlight ? qgcPal.accentSubtle : control.backgroundColor
 
         Rectangle {
@@ -72,6 +73,7 @@ Button {
         QGCColoredImage {
             id: icon
             Layout.alignment: Qt.AlignHCenter
+            Layout.minimumWidth: control.elide !== Text.ElideNone ? _iconHeight : -1
             source: control.iconSource
             height: _iconHeight
             width: height
@@ -84,6 +86,8 @@ Button {
         QGCLabel {
             id: text
             Layout.alignment: Qt.AlignHCenter
+            Layout.fillWidth: control.elide !== Text.ElideNone
+            Layout.minimumWidth: control.elide !== Text.ElideNone ? 0 : -1
             text: control.text
             font.pointSize: control.pointSize
             font.family: control.font.family

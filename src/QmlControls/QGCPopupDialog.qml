@@ -204,7 +204,7 @@ Popup {
         width:          mainLayout.width + _contentMargin * 2
         height:         mainLayout.height + _contentMargin * 2
         color:          _qgcPal.windowCard
-        radius:         root.padding / 2
+        radius:         ScreenTools.defaultBorderRadius
         border.width:   1
         border.color:   _qgcPal.borderSubtle
     }

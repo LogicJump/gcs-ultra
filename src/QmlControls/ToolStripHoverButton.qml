@@ -122,7 +122,7 @@ Button {
     background: Rectangle {
         id:     buttonBkRect
         color:  (control.checked || control.pressed) ?
-                    qgcPal.accent :
+                    qgcPal.selectionFill :
                     ((control.enabled && control.hovered) ? qgcPal.toolStripHoverColor : "transparent")
     }
 }

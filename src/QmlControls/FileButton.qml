@@ -8,7 +8,7 @@ import QGroundControl.Controls
 Rectangle {
     implicitWidth:  ScreenTools.implicitButtonWidth
     implicitHeight: ScreenTools.implicitButtonHeight
-    color:          highlight ? qgcPal.accent : qgcPal.windowCard
+    color:          highlight ? qgcPal.selectionFill : qgcPal.windowCard
     border.color:   highlight ? qgcPal.accentText : qgcPal.textPrimary
 
     property alias  text:       label.text

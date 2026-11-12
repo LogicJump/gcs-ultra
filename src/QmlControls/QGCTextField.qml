@@ -9,7 +9,7 @@ TextField {
     id:                 control
     color:              qgcPal.textPrimary
     placeholderTextColor: qgcPal.textSecondary
-    selectionColor:     qgcPal.accent
+    selectionColor:     qgcPal.selectionFill
     selectedTextColor:  qgcPal.accentText
     activeFocusOnPress: true
     antialiasing:       true

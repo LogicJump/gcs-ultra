@@ -114,6 +114,8 @@ public:
     DEFINE_QGC_COLOR(textSecondary, setTextSecondary)
     DEFINE_QGC_COLOR(accent, setAccent)
     DEFINE_QGC_COLOR(accentSubtle, setAccentSubtle)
+    DEFINE_QGC_COLOR(selectionFill, setSelectionFill)
+    DEFINE_QGC_COLOR(buttonPrimary, setButtonPrimary)
     DEFINE_QGC_COLOR(accentText, setAccentText)
     DEFINE_QGC_COLOR(errorText, setErrorText)
     DEFINE_QGC_COLOR(warningText,                   setWarningText)

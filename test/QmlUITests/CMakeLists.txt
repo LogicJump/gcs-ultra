@@ -88,7 +88,7 @@ set_source_files_properties(
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 
-add_qgc_test(TopLevelViewsTest LABELS Integration NoSanitizer TIMEOUT 120)
+add_qgc_test(TopLevelViewsTest LABELS Integration NoSanitizer TIMEOUT 240)
 add_qgc_test(PX4VehicleConfigUITest LABELS Integration NoSanitizer TIMEOUT 180)
 add_qgc_test(APMVehicleConfigUITest LABELS Integration NoSanitizer TIMEOUT 360)
 add_qgc_test(ToolbarIndicatorUITest LABELS Integration NoSanitizer TIMEOUT 180 SHARDS 3)

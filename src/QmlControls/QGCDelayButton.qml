@@ -85,7 +85,7 @@ DelayButton {
         implicitHeight: ScreenTools.implicitButtonHeight
         border.width:   showBorder ? 1 : 0
         border.color:   control.primary || control._showHighlight || (control.enabled && control.hovered) ? qgcPal.accent : qgcPal.borderSubtle
-        color:          control.primary ? qgcPal.accent : (control._showHighlight ? qgcPal.accentSubtle : qgcPal.windowCard)
+        color:          control.primary ? qgcPal.buttonPrimary : (control._showHighlight ? qgcPal.accentSubtle : qgcPal.windowCard)
 
         Rectangle {
             anchors.fill:   parent

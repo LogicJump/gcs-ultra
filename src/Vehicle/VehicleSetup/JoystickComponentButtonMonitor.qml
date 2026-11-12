@@ -34,7 +34,7 @@ Flow {
             implicitHeight: width
             border.width: 1
             border.color: qgcPal.textPrimary
-            color: pressed ? qgcPal.accent : qgcPal.windowCard
+            color: pressed ? qgcPal.selectionFill : qgcPal.windowCard
 
             property bool pressed
 

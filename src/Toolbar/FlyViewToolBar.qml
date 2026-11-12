@@ -16,7 +16,6 @@ Item {
 
     property var    _activeVehicle:     QGroundControl.multiVehicleManager.activeVehicle
     property bool   _communicationLost: _activeVehicle ? _activeVehicle.vehicleLinkManager.communicationLost : false
-    property color  _mainStatusBGColor: qgcPal.brandPrimary
     property real   _leftRightMargin:   ScreenTools.defaultFontPixelWidth * 0.75
     property var    _guidedController:  globals.guidedControllerFlyView
 
@@ -41,27 +40,9 @@ Item {
                 width:  leftPanelLayout.implicitWidth
                 height: parent.height
 
-                // Gradient background behind Q button and main status indicator
                 Rectangle {
-                    id:         gradientBackground
-                    height:     parent.height
-                    width:      mainStatusLayout.width
-                    opacity:    qgcPal.windowTransparent.a
-
-                    gradient: Gradient {
-                        orientation: Gradient.Horizontal
-                        GradientStop { position: 0; color: _mainStatusBGColor }
-                        //GradientStop { position: qgcButton.x + qgcButton.width; color: _mainStatusBGColor }
-                        GradientStop { position: 1; color: qgcPal.window }
-                    }
-                }
-
-                // Standard toolbar background to the right of the gradient
-                Rectangle {
-                    anchors.left:   gradientBackground.right
-                    anchors.right:  parent.right
-                    height:         parent.height
-                    color:          qgcPal.windowTransparent
+                    anchors.fill: parent
+                    color:      qgcPal.windowPanel
                 }
 
                 RowLayout {
@@ -73,15 +54,6 @@ Item {
                         id:         mainStatusLayout
                         height:     parent.height
                         spacing:    0
-
-                        QGCToolBarButton {
-                            id:                 qgcButton
-                            objectName:         "toolbar_qgcLogo"
-                            Layout.fillHeight:  true
-                            icon.source:        "/res/QGCLogoFull.svg"
-                            logo:               true
-                            onClicked:          mainWindow.showToolSelectDialog()
-                        }
 
                         MainStatusIndicator {
                             id:                 mainStatusIndicator
@@ -112,7 +84,7 @@ Item {
 
                 Rectangle {
                     anchors.fill:   parent
-                    color:          qgcPal.windowTransparent
+                    color:          qgcPal.windowPanel
                 }
 
                 GuidedActionConfirm {
@@ -132,7 +104,7 @@ Item {
 
                 Rectangle {
                     anchors.fill:   parent
-                    color:          qgcPal.windowTransparent
+                    color:          qgcPal.windowPanel
                 }
 
                 FlyViewToolBarIndicators {

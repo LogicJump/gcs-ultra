@@ -41,7 +41,7 @@ Item {
         radius:         width / 2
         border.width:   ScreenTools.defaultFontPixelHeight * 0.0625
         border.color:   lightBorders ? qgcPal.mapWidgetBorderLight : qgcPal.mapWidgetBorderDark
-        color:          checked ? qgcPal.accent : qgcPal.windowCard
+        color:          checked ? qgcPal.selectionFill : qgcPal.windowCard
 
         QGCColoredImage {
             id:                 button

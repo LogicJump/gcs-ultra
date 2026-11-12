@@ -9,7 +9,7 @@ import QGroundControl.Controls
 
 import "QGCGroupBox.js" as GroupBox
 
-/// Bordered content area with rounded header buttons sitting on the top border.
+/// Bordered content area with header buttons sitting on the top border.
 ///     - Group box: set heading to show a single non-interactive header button.
 ///     - Tabs: add QGCGroupBoxTab children. Each visible tab gets a header button and only the current tab's content is shown.
 ///       Children which are not tabs are always shown. heading is ignored when there are tabs.
@@ -17,6 +17,7 @@ Item {
     id: control
     // Matches the previous ColumnLayout based SettingsGroupLayout, which filled the width of a parent layout
     Layout.fillWidth: true
+    Layout.alignment: Qt.AlignTop
     implicitWidth: Math.max(_contentColumn.implicitWidth + _contentInset * 2, _headerImplicitWidth + _headerInset * 2)
     implicitHeight: _contentColumn.y + _contentColumn.implicitHeight + _contentInset
 
@@ -244,7 +245,7 @@ Item {
         height: control.height - y
         visible: control.showBorder
 
-        property real _radius: control._margins
+        property real _radius: ScreenTools.defaultBorderRadius
         property var _topSegments: GroupBox.topBorderSegments(width, _radius,
                                                               _header.visible ? _header.x - control._headerButtonSpacing : _radius,
                                                               _header.visible ? _header.x + control._headerFirstRowRight + control._headerButtonSpacing : _radius)
@@ -258,7 +259,7 @@ Item {
         // Sides and bottom, then the top left and top right corners
         Repeater {
             model: [
-                Qt.rect(0, outline._radius, outline.width, Math.max(outline.height - outline._radius, 0)),
+                Qt.rect(0, Math.max(outline._radius, 1), outline.width, Math.max(outline.height - Math.max(outline._radius, 1), 0)),
                 Qt.rect(0, 0, outline._radius, outline._radius),
                 Qt.rect(outline.width - outline._radius, 0, outline._radius, outline._radius)
             ]

@@ -15,6 +15,10 @@ public:
     TopLevelViewsTest() = default;
 
 private slots:
+    void _testDesktopWindowControls();
+    void _testDesktopWindowResizeEdges();
+    void _testWorkspaceNavigation();
+    void _testWorkspaceNavigationNarrow();
     void _testNavigateViews();
     void _testSettingsSectionVisibility();
     void _testSettingsHiddenSectionAfterPageSwitch();

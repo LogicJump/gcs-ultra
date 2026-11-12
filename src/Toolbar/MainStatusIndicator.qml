@@ -121,7 +121,7 @@ RowLayout {
         horizontalAlignment:    Text.AlignRight
         verticalAlignment:      Text.AlignVCenter
         text:                   mainStatusText()
-        color:                  qgcPal.textPrimary
+        color:                  mainStatusColor()
         font.pointSize:         ScreenTools.largeFontPointSize
 
         property string _commLostText:      qsTr("Comms Lost")
@@ -132,26 +132,30 @@ RowLayout {
         property string _flyingText:        qsTr("Flying")
         property string _landingText:       qsTr("Landing")
 
+        function mainStatusColor() {
+            if (!_activeVehicle) {
+                return qgcPal.textPrimary
+            }
+            const readinessStatus = _readiness ? _readiness.status : VehicleReadiness.Status.Unknown
+            if (_communicationLost || readinessStatus === VehicleReadiness.Status.NotReady) {
+                return qgcPal.errorText
+            }
+            const healthWarnings = _healthAndArmingChecksSupported &&
+                                   _activeVehicle.healthAndArmingCheckReport.hasWarningsOrErrors
+            if (healthWarnings || readinessStatus !== VehicleReadiness.Status.Ready) {
+                return qgcPal.warningText
+            }
+            return qgcPal.successText
+        }
+
         function mainStatusText() {
             if (_activeVehicle) {
                 if (_communicationLost) {
-                    _mainStatusBGColor = "red"
                     return mainStatusLabel._commLostText
                 }
 
                 const readinessStatus = _readiness ? _readiness.status : VehicleReadiness.Status.Unknown
-                const healthWarnings = _healthAndArmingChecksSupported &&
-                                       _activeVehicle.healthAndArmingCheckReport.hasWarningsOrErrors
-
                 if (_activeVehicle.armed) {
-                    if (readinessStatus === VehicleReadiness.Status.NotReady) {
-                        _mainStatusBGColor = "red"
-                    } else if (healthWarnings || readinessStatus === VehicleReadiness.Status.Unknown || _vehicleSyncing) {
-                        _mainStatusBGColor = "yellow"
-                    } else {
-                        _mainStatusBGColor = "green"
-                    }
-
                     if (_activeVehicle.underway) {
                         return mainStatusLabel._flyingText
                     } else if (_activeVehicle.landing) {
@@ -162,13 +166,10 @@ RowLayout {
                 }
 
                 if (readinessStatus === VehicleReadiness.Status.Ready) {
-                    _mainStatusBGColor = healthWarnings ? "yellow" : "green"
                     return mainStatusLabel._readyToFlyText
                 }
-                _mainStatusBGColor = (readinessStatus === VehicleReadiness.Status.NotReady) ? "red" : "yellow"
                 return mainStatusLabel._notReadyToFlyText
             } else {
-                _mainStatusBGColor = qgcPal.brandPrimary
                 return mainStatusLabel._disconnectedText
             }
         }

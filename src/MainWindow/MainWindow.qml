@@ -18,13 +18,12 @@ ApplicationWindow {
     id:         mainWindow
     visible:    true
     // The special casing for android prevents white bars from showing up on the edges of the screen with newer android versions
-    flags:      Qt.Window | (ScreenTools.isAndroid ? Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint : 0)
+    flags:      Qt.Window | (ScreenTools.isAndroid ? Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint
+                                                 : ScreenTools.isWindows ? Qt.FramelessWindowHint : 0)
 
-    // Qt 6.9+ auto-sets ApplicationWindow padding to the display safe-area insets on mobile,
-    // which insets our full-bleed content and leaves a blank strip along the screen edge.
-    // QGC draws edge-to-edge and manages its own insets, so zero the padding.
-    topPadding:    0
-    bottomPadding: 0
+    // Qt 6.12 reserves toolbar space through SafeArea padding; QGC handles display insets in its views.
+    topPadding:    (header && header.visible ? header.height : 0) + (menuBar && menuBar.visible ? menuBar.height : 0)
+    bottomPadding: footer && footer.visible ? footer.height : 0
     leftPadding:   0
     rightPadding:  0
 
@@ -143,20 +142,21 @@ ApplicationWindow {
         toolDrawer.visible = false
     }
 
-    function showTool(toolTitle, toolSource, toolIcon) {
+    function showTool(toolTitle, toolSource, toolIcon, workspaceId = "") {
         toolDrawer.backIcon     = flyView.visible ? "/qmlimages/PaperPlane.svg" : "/qmlimages/Plan.svg"
         toolDrawer.toolTitle    = toolTitle
         toolDrawer.toolSource   = toolSource
         toolDrawer.toolIcon     = toolIcon
+        toolDrawer.workspaceId  = workspaceId
         toolDrawer.visible      = true
     }
 
     function showAnalyzeTool() {
-        showTool(qsTr("Analyze Tools"), "qrc:/qml/QGroundControl/AnalyzeView/AnalyzeView.qml", "/qmlimages/Analyze.svg")
+        showTool(qsTr("Analyze Tools"), "qrc:/qml/QGroundControl/AnalyzeView/AnalyzeView.qml", "/qmlimages/Analyze.svg", "analyze")
     }
 
     function showVehicleConfig() {
-        showTool(qsTr("Vehicle Configuration"), "qrc:/qml/QGroundControl/VehicleSetup/VehicleConfigView.qml", "/qmlimages/Gears.svg")
+        showTool(qsTr("Vehicle Configuration"), "qrc:/qml/QGroundControl/VehicleSetup/VehicleConfigView.qml", "/qmlimages/Gears.svg", "vehicle")
     }
 
     function showVehicleConfigParametersPage() {
@@ -173,9 +173,29 @@ ApplicationWindow {
     }
 
     function showSettingsTool(settingsPage = "") {
-        showTool(qsTr("Application Settings"), "qrc:/qml/QGroundControl/Controls/AppSettings.qml", "/res/QGCLogoWhite")
+        showTool(qsTr("Application Settings"), "qrc:/qml/QGroundControl/Controls/AppSettings.qml", "/res/QGCLogoWhite", "settings")
         if (settingsPage !== "") {
             toolDrawerLoader.item.showSettingsPage(settingsPage)
+        }
+    }
+
+    function navigateWorkspace(workspace) {
+        if (!["fly", "plan", "vehicle", "analyze", "settings"].includes(workspace)
+                || (workspace === "analyze" && !QGroundControl.corePlugin.showAdvancedUI)
+                || (workspace === "settings" && QGroundControl.corePlugin.options.combineSettingsAndSetup)
+                || workspace === workspaceNavigation.currentWorkspace) {
+            return
+        }
+        if (!allowViewSwitch()) {
+            return
+        }
+        closeIndicatorDrawer()
+        switch (workspace) {
+        case "fly": showFlyView(); break
+        case "plan": showPlanView(); break
+        case "vehicle": showVehicleConfig(); break
+        case "analyze": showAnalyzeTool(); break
+        case "settings": showSettingsTool(); break
         }
     }
 
@@ -340,6 +360,46 @@ ApplicationWindow {
         color:          QGroundControl.globalPalette.window
     }
 
+    header: WorkspaceNavigation {
+        id: workspaceNavigation
+        hostWindow: mainWindow
+        currentWorkspace: toolDrawer.visible ? toolDrawer.workspaceId : flyView.visible ? "fly" : "plan"
+        showAnalyze: QGroundControl.corePlugin.showAdvancedUI
+        showSettings: !QGroundControl.corePlugin.options.combineSettingsAndSetup
+        visible: !(flyView.visible && !toolDrawer.visible && QGroundControl.videoManager.fullScreen)
+        onWorkspaceRequested: (workspace) => mainWindow.navigateWorkspace(workspace)
+        onMenuRequested: mainWindow.showToolSelectDialog()
+    }
+
+    Item {
+        parent: mainWindow.contentItem.parent.parent
+        anchors.fill: parent
+        z: QGroundControl.zOrderTopMost + 1
+        visible: ScreenTools.isWindows && mainWindow.visibility === Window.Windowed
+
+        readonly property real resizeMargin: ScreenTools.defaultFontPixelWidth / 2
+
+        Repeater {
+            model: [Qt.TopEdge, Qt.BottomEdge, Qt.LeftEdge, Qt.RightEdge,
+                    Qt.TopEdge | Qt.LeftEdge, Qt.TopEdge | Qt.RightEdge,
+                    Qt.BottomEdge | Qt.LeftEdge, Qt.BottomEdge | Qt.RightEdge]
+
+            MouseArea {
+                required property int modelData
+                readonly property bool horizontalEdge: modelData === Qt.TopEdge || modelData === Qt.BottomEdge
+                readonly property bool verticalEdge: modelData === Qt.LeftEdge || modelData === Qt.RightEdge
+                width: horizontalEdge ? parent.width - parent.resizeMargin * 2 : parent.resizeMargin
+                height: verticalEdge ? parent.height - parent.resizeMargin * 2 : parent.resizeMargin
+                x: modelData & Qt.RightEdge ? parent.width - width : horizontalEdge ? parent.resizeMargin : 0
+                y: modelData & Qt.BottomEdge ? parent.height - height : verticalEdge ? parent.resizeMargin : 0
+                cursorShape: horizontalEdge ? Qt.SizeVerCursor : verticalEdge ? Qt.SizeHorCursor
+                             : modelData === (Qt.TopEdge | Qt.LeftEdge) || modelData === (Qt.BottomEdge | Qt.RightEdge)
+                               ? Qt.SizeFDiagCursor : Qt.SizeBDiagCursor
+                onPressed: (mouse) => { mouse.accepted = mainWindow.startSystemResize(modelData) }
+            }
+        }
+    }
+
     // Disabled under the tool drawer: pointer handlers (e.g. GeoMap DragHandler) still get presses through it and steal drags
     FlyView {
         id:                     flyView
@@ -401,14 +461,14 @@ ApplicationWindow {
     ToolTip {
         id:             validationErrorToast
         x:              (mainWindow.width - width) / 2
-        y:              mainWindow.height - height - ScreenTools.defaultFontPixelHeight * 3
+        y:              mainWindow.contentItem.height - height - ScreenTools.defaultFontPixelHeight * 3
         timeout:        3000
         closePolicy:    Popup.NoAutoClose
         text:           qsTr("Please correct the invalid value before continuing")
 
         background: Rectangle {
             color:  qgcPal.alertBackground
-            radius: ScreenTools.defaultFontPixelWidth / 2
+            radius: ScreenTools.defaultBorderRadius
         }
 
         contentItem: QGCLabel {
@@ -435,6 +495,7 @@ ApplicationWindow {
         property string toolTitle
         property alias toolSource:  toolDrawerLoader.source
         property var toolIcon
+        property string workspaceId
 
         onVisibleChanged: {
             if (!toolDrawer.visible) {
@@ -452,8 +513,8 @@ ApplicationWindow {
             anchors.left:   parent.left
             anchors.right:  parent.right
             anchors.top:    parent.top
-            height:         ScreenTools.toolbarHeight
-            color:          qgcPal.toolbarBackground
+            height:         ScreenTools.defaultFontPixelHeight * 2
+            color:          qgcPal.windowPanel
 
             RowLayout {
                 id:                 toolDrawerToolbarLayout
@@ -463,19 +524,10 @@ ApplicationWindow {
                 anchors.bottom:     parent.bottom
                 spacing:            ScreenTools.defaultFontPixelWidth
 
-                QGCToolBarButton {
-                    id: qgcButton
-                    objectName: "toolbar_qgcLogo"
-                    height: parent.height
-                    icon.source: "/res/QGCLogoFull.svg"
-                    logo: true
-                    onClicked: mainWindow.showToolSelectDialog()
-                }
-
                 QGCLabel {
                     id:             toolbarDrawerText
                     text:           toolDrawer.toolTitle
-                    font.pointSize: ScreenTools.largeFontPointSize
+                    font.pointSize: ScreenTools.defaultFontPointSize
                 }
             }
         }
@@ -535,7 +587,7 @@ ApplicationWindow {
         readonly property int maxShownMessages:             5
 
         readonly property real _chromeHeight:   topInset + ScreenTools.defaultFontPixelHeight
-        readonly property real _maxHeight:      mainWindow.height - y - ScreenTools.defaultFontPixelHeight
+        readonly property real _maxHeight:      mainWindow.contentItem.height - y - ScreenTools.defaultFontPixelHeight
 
         function appendMessageIfRoom(message) {
             if (shownMessageCount >= maxShownMessages) {
@@ -561,7 +613,7 @@ ApplicationWindow {
 
         background: Rectangle {
             color:          qgcPal.alertBackground
-            radius:         ScreenTools.defaultFontPixelHeight * 0.5
+            radius:         ScreenTools.defaultBorderRadius
             border.color:   qgcPal.alertBorder
             border.width:   2
 
@@ -572,7 +624,7 @@ ApplicationWindow {
                 anchors.top:                parent.top
                 anchors.topMargin:          -(height / 2)
                 color:                      qgcPal.alertBackground
-                radius:                     ScreenTools.defaultFontPixelHeight * 0.25
+                radius:                     ScreenTools.defaultBorderRadius
                 border.color:               qgcPal.alertBorder
                 border.width:               1
                 width:                      Math.min(vehicleWarningLabel.implicitWidth + _margins, parent.width - ScreenTools.defaultFontPixelHeight)
@@ -648,7 +700,7 @@ ApplicationWindow {
     Popup {
         id:             indicatorDrawer
         x:              calcXPosition()
-        y:              ScreenTools.toolbarHeight + _margins
+        y:              indicatorItem ? indicatorItem.mapToItem(mainWindow.contentItem, 0, indicatorItem.height).y + _margins : _margins
         leftInset:      0
         rightInset:     0
         topInset:       0
@@ -694,8 +746,7 @@ ApplicationWindow {
                 anchors.fill:   parent
                 color:          QGroundControl.globalPalette.window
                 border.color:   QGroundControl.globalPalette.borderSubtle
-                radius:         indicatorDrawer._margins
-                opacity:        0.85
+                radius:         ScreenTools.defaultBorderRadius
             }
 
             Rectangle {
@@ -730,7 +781,7 @@ ApplicationWindow {
             contentHeight:  indicatorDrawerLoader.height
 
             property real _availableWidth:  mainWindow.contentItem.width - (2 * indicatorDrawer._margins) - (indicatorDrawer.padding * 2)
-            property real _availableHeight: mainWindow.contentItem.height - ScreenTools.toolbarHeight - (2 * indicatorDrawer._margins) - (indicatorDrawer.padding * 2)
+            property real _availableHeight: Math.max(0, mainWindow.contentItem.height - indicatorDrawer.y - indicatorDrawer._margins - (indicatorDrawer.padding * 2))
 
             Loader {
                 id:         indicatorDrawerLoader

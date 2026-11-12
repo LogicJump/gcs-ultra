@@ -52,7 +52,7 @@ Slider {
                control.topPadding + control.visualPosition * (control.availableHeight - height)
         implicitWidth: _radius * 2
         implicitHeight: _radius * 2
-        color: qgcPal.accent
+        color: control.displayValue ? qgcPal.buttonPrimary : qgcPal.accent
         radius: _radius
 
         property real _radius: ScreenTools.defaultFontPixelHeight / 2

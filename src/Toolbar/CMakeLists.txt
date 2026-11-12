@@ -35,6 +35,7 @@ qt_add_qml_module(
         TelemetryRSSIIndicator.qml
         VehicleMessageList.qml
         VideoStreamIndicator.qml
+        WorkspaceNavigation.qml
     NO_PLUGIN
 )
 
@@ -93,6 +94,10 @@ qt_add_resources(
         "${CMAKE_SOURCE_DIR}/src/Toolbar/Images/TelemRSSI.svg"
         "${CMAKE_SOURCE_DIR}/src/Toolbar/Images/TrackingIcon.svg"
         "${CMAKE_SOURCE_DIR}/src/Toolbar/Images/Yield.svg"
+        "${CMAKE_SOURCE_DIR}/src/Toolbar/Images/WindowMinimize.svg"
+        "${CMAKE_SOURCE_DIR}/src/Toolbar/Images/WindowMaximize.svg"
+        "${CMAKE_SOURCE_DIR}/src/Toolbar/Images/WindowRestore.svg"
+        "${CMAKE_SOURCE_DIR}/src/Toolbar/Images/WindowClose.svg"
 )
 
 qt_add_resources(

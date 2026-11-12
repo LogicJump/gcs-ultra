@@ -293,7 +293,10 @@ void CriticalVehicleMessageUITest::_testPopupStacksOnlyMessagesThatFit()
     // A window twice the single-message popup's height has room for a second message, but not for all of them
     QVERIFY(_showCriticalMessage(messages.first()));
     QVERIFY(_waitForPopupOpened(popup, messages.first()));
-    const int windowHeight = qCeil(popup->property("y").toReal() + (2.0 * popup->property("height").toReal()));
+    QQuickItem* const popupParent = qvariant_cast<QQuickItem*>(popup->property("parent"));
+    QVERIFY(popupParent);
+    const qreal popupSceneY = popupParent->mapToScene(QPointF(0, popup->property("y").toReal())).y();
+    const int windowHeight = qCeil(popupSceneY + (2.0 * popup->property("height").toReal()));
     QVERIFY(QMetaObject::invokeMethod(popup, "close"));
     QVERIFY(_waitForPopupClosed(popup));
     QCOMPARE_LT(windowHeight, _window->height());
@@ -315,7 +318,9 @@ void CriticalVehicleMessageUITest::_testPopupStacksOnlyMessagesThatFit()
                        QStringLiteral("toast text limited by window height")));
     QVERIFY2(popup->property("additionalCriticalMessagesReceived").toBool(),
              "messages that did not fit did not set additionalCriticalMessagesReceived");
-    QCOMPARE_LE(popup->property("y").toReal() + popup->property("height").toReal(), _window->height());
+    QCOMPARE_LE(
+        popupParent->mapToScene(QPointF(0, popup->property("y").toReal() + popup->property("height").toReal())).y(),
+        _window->height());
 
     stopUI();
 }
