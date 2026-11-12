@@ -15,12 +15,17 @@ Item {
     property alias settingsGroup:           factValueGrid.settingsGroup
     property alias specificVehicleForCard:  factValueGrid.specificVehicleForCard
 
+    readonly property var _telemetryVehicle: specificVehicleForCard || QGroundControl.multiVehicleManager.activeVehicle
+    readonly property bool _connected: _telemetryVehicle && !_telemetryVehicle.isOfflineEditingVehicle
+                                        && !_telemetryVehicle.vehicleLinkManager.communicationLost
+    readonly property bool _telemetryAvailable: _connected && _telemetryVehicle.telemetryAvailable
+
     Rectangle {
         id:         backgroundRect
         width:      control.width + extraWidth
         height:     control.height
         color:      qgcPal.window
-        radius:     ScreenTools.defaultFontPixelWidth / 2
+        radius:     ScreenTools.defaultBorderRadius
         opacity:    0.75
     }
 
@@ -51,6 +56,24 @@ Item {
 
         HorizontalFactValueGrid {
             id: factValueGrid
+        }
+    }
+
+    Rectangle {
+        anchors.fill: mainLayout
+        color:        qgcPal.window
+        visible:      !control._telemetryAvailable && !factValueGrid.settingsUnlocked
+
+        QGCLabel {
+            objectName:             "flyTelemetryUnavailable"
+            anchors.fill:           parent
+            text:                   !control._telemetryVehicle || control._telemetryVehicle.isOfflineEditingVehicle ? qsTr("No vehicle connected")
+                                    : !control._connected ? qsTr("Vehicle connection lost")
+                                    : qsTr("Waiting for telemetry")
+            color:                  qgcPal.textSecondary
+            wrapMode:               Text.WordWrap
+            horizontalAlignment:    Text.AlignHCenter
+            verticalAlignment:      Text.AlignVCenter
         }
     }
 

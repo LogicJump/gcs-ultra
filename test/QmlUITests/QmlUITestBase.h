@@ -177,10 +177,11 @@ protected:
     /// Qt Quick 3D requires an RHI-based scene graph backend. Where the test
     /// harness forces the software backend (e.g. macOS offscreen), View3D cannot
     /// render — scene objects still instantiate — and Qt emits two known warnings
-    /// when a frame renders a View3D. When the live window's backend is not
-    /// RHI-based, registers log expectations for those warnings so strict-mode
-    /// log checking passes. With \a strict true the warnings MUST occur (caller
-    /// must call verifyExpectedLogMessage() twice after showing the 3D view —
+    /// when a frame renders a View3D, plus an exact cleanup warning if those objects
+    /// reach window teardown without a render-context interface. When the live
+    /// window's backend is not RHI-based, registers log handling for those warnings
+    /// so strict-mode log checking passes. With \a strict true the render warnings
+    /// MUST occur (caller must call verifyExpectedLogMessage() twice after showing the 3D view —
     /// catches Qt behavior changes); with \a strict false 0..N occurrences are
     /// tolerated (for tests where no frame is guaranteed to render the View3D).
     /// On RHI backends nothing is registered, so the warnings would fail the

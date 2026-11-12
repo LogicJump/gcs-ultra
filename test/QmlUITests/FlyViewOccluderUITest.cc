@@ -8,18 +8,22 @@
 #include <QtCore/QScopeGuard>
 #include <QtPositioning/QGeoCoordinate>
 #include <QtQuick/QQuickItem>
+#include <QtQuick/QQuickWindow>
 #include <QtTest/QSignalSpy>
 #include <QtTest/QTest>
 
 #include "Fact.h"
+#include "FactValueGrid.h"
 #include "FlyViewSettings.h"
 #include "GeoMapCamera.h"
 #include "GeoScene.h"
 #include "MapPositionTracker.h"
 #include "MockLink.h"
+#include "QmlObjectListModel.h"
 #include "SettingsManager.h"
 #include "Vehicle.h"
 #include "VideoSettings.h"
+#include "Viewer3DSettings.h"
 
 UT_REGISTER_TEST(FlyViewOccluderUITest, TestLabel::Integration)
 
@@ -28,6 +32,153 @@ namespace {
 constexpr int kItemAppearTimeoutMs = 10000;
 constexpr int kSettleTimeoutMs = 5000;
 }  // namespace
+
+void FlyViewOccluderUITest::_testDesktopWorkspaceKeepsMapClear()
+{
+    startUI();
+    if (QTest::currentTestFailed()) {
+        return;
+    }
+
+    Fact* const viewer3DEnabled = SettingsManager::instance()->viewer3DSettings()->enabled();
+    const QVariant savedViewer3DEnabled = viewer3DEnabled->rawValue();
+    const auto restoreViewer3D =
+        qScopeGuard([viewer3DEnabled, savedViewer3DEnabled] { viewer3DEnabled->setRawValue(savedViewer3DEnabled); });
+    viewer3DEnabled->setRawValue(false);
+
+    const QSize savedSize = _window->size();
+    const int savedMinimumWidth = _window->minimumWidth();
+    const auto restoreWindow = qScopeGuard([this, savedSize, savedMinimumWidth] {
+        _window->setMinimumWidth(savedMinimumWidth);
+        _window->resize(savedSize);
+    });
+    _window->setMinimumWidth(0);
+    _window->resize(2440, 1000);
+
+    QQuickItem* const missionPanel = findVisibleItem(_rootItem, QStringLiteral("flyViewMissionPanel"));
+    QVERIFY2(missionPanel, "The desktop Fly workspace must show the current mission beside the map");
+    QQuickItem* const instruments = findVisibleItem(_rootItem, QStringLiteral("flyViewBottomRightRowLayout"));
+    QVERIFY(instruments);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        missionPanel->mapToScene(QPointF(missionPanel->width(), 0)).x() + 300 < instruments->mapToScene(QPointF()).x(),
+        kSettleTimeoutMs);
+    QQuickItem* const widgetLayer = findVisibleItem(_rootItem, QStringLiteral("flyViewWidgetLayer"));
+    QVERIFY(widgetLayer);
+    QObject* const occluders = widgetLayer->property("occluders").value<QObject*>();
+    QVERIFY(occluders);
+    const QRectF missionOccluder = occluders->property("missionPanel").toRectF();
+    QCOMPARE(missionOccluder.size(), missionPanel->size());
+    const qreal toolsMargin = widgetLayer->property("_toolsMargin").toReal();
+    QTRY_VERIFY_WITH_TIMEOUT(occluders->property("toolStrip").toRectF().isEmpty(), kSettleTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(missionPanel->x() - toolsMargin) < 1, kSettleTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(occluders->property("missionPanel").toRectF().x() - toolsMargin) < 1,
+                             kSettleTimeoutMs);
+    saveScreenshot(QStringLiteral("fly-dock-left"));
+    viewer3DEnabled->setRawValue(true);
+    QTRY_VERIFY_WITH_TIMEOUT(!occluders->property("toolStrip").toRectF().isEmpty(), kSettleTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(
+        qAbs(missionPanel->x() - occluders->property("toolStrip").toRectF().right() - toolsMargin) < 1,
+        kSettleTimeoutMs);
+    viewer3DEnabled->setRawValue(false);
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(missionPanel->x() - toolsMargin) < 1, kSettleTimeoutMs);
+    QVERIFY(verifyText(QStringLiteral("flyViewMissionState"),
+                       QCoreApplication::translate("FlyViewWidgetLayer", "No vehicle connected"),
+                       QStringLiteral("offline mission state")));
+    QVERIFY(verifyEnabled(QStringLiteral("flyDock_takeoff"), false, QStringLiteral("offline takeoff disabled")));
+    QVERIFY(verifyText(QStringLiteral("flyTelemetryUnavailable"),
+                       QCoreApplication::translate("TelemetryValuesBar", "No vehicle connected"),
+                       QStringLiteral("offline telemetry unavailable")));
+    QVERIFY(verifyText(QStringLiteral("flyInstrumentUnavailable"),
+                       QCoreApplication::translate("FlyViewInstrumentPanel", "No vehicle connected"),
+                       QStringLiteral("offline instruments unavailable")));
+    QVERIFY(verifyVisibility(QStringLiteral("flyToolStrip_takeoffButton"), false,
+                             QStringLiteral("desktop takeoff action appears only in the dock")));
+    QVERIFY(verifyVisibility(QStringLiteral("flyToolStrip_landButton"), false,
+                             QStringLiteral("desktop landing action appears only in the dock")));
+
+    QQuickItem* const dock = findVisibleItem(_rootItem, QStringLiteral("flyViewRightDock"));
+    QVERIFY(dock);
+    QVERIFY(dock->mapToScene(QPointF()).x() > _window->width() / 2);
+    QTRY_VERIFY_WITH_TIMEOUT(missionPanel->height() < widgetLayer->height() / 2, kSettleTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(dock->height() < widgetLayer->height() * 0.75, kSettleTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(instruments->y() < widgetLayer->height() / 4, kSettleTimeoutMs);
+    QQuickItem* const actions = findVisibleItem(_rootItem, QStringLiteral("flyViewFlightActions"));
+    QVERIFY(actions);
+    QTRY_VERIFY_WITH_TIMEOUT(actions->y() >= instruments->y() + instruments->height(), kSettleTimeoutMs);
+    const auto dockContains = [dock](QQuickItem* item) {
+        return item->isVisible() && item->width() > 0 && item->height() > 0 &&
+               QRectF(QPointF(), dock->size()).contains(dock->mapRectFromItem(item, QRectF(QPointF(), item->size())));
+    };
+    _window->resize(2438, 1410);
+    QTRY_VERIFY_WITH_TIMEOUT(widgetLayer->property("_desktopLayout").toBool(), kSettleTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(dockContains(instruments), kSettleTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(dockContains(actions), kSettleTimeoutMs);
+    QQuickItem* const telemetry = findVisibleItem(_rootItem, QStringLiteral("flyViewTelemetryValues"));
+    QVERIFY(telemetry);
+    QQuickItem* const instrumentPanel = findVisibleItem(_rootItem, QStringLiteral("flyViewInstrumentPanel"));
+    QVERIFY(instrumentPanel);
+    auto* const selectedInstrument =
+        qobject_cast<QQuickItem*>(instrumentPanel->property("innerControl").value<QObject*>());
+    QVERIFY(selectedInstrument);
+    QQuickItem* const takeoffButton = findVisibleItem(_rootItem, QStringLiteral("flyDock_takeoff"));
+    QVERIFY(takeoffButton);
+    const auto dockContainsContent = [&dockContains, telemetry, selectedInstrument, takeoffButton] {
+        return dockContains(telemetry) && dockContains(selectedInstrument) && dockContains(takeoffButton);
+    };
+    QTRY_VERIFY_WITH_TIMEOUT(dockContainsContent(), kSettleTimeoutMs);
+    auto* const grid = qobject_cast<FactValueGrid*>(telemetry->property("factValueGrid").value<QObject*>());
+    QVERIFY(grid);
+    const int savedColumns = grid->columns()->count();
+    const int savedRows = grid->property("rowCount").toInt();
+    const auto restoreTelemetry = qScopeGuard([grid, savedColumns, savedRows] {
+        while (grid->columns()->count() > savedColumns) {
+            grid->deleteLastColumn();
+        }
+        while (grid->property("rowCount").toInt() > savedRows) {
+            grid->deleteLastRow();
+        }
+    });
+
+    for (int column = 0; column < 24; ++column) {
+        grid->appendColumn();
+    }
+    QTRY_VERIFY_WITH_TIMEOUT(!missionPanel->isVisible(), kSettleTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(occluders->property("rightDock").toRectF().isEmpty(), kSettleTimeoutMs);
+    while (grid->columns()->count() > savedColumns) {
+        grid->deleteLastColumn();
+    }
+    QTRY_VERIFY_WITH_TIMEOUT(missionPanel->isVisible(), kSettleTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(dockContains(instruments) && dockContains(actions), kSettleTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(dockContainsContent(), kSettleTimeoutMs);
+
+    for (int row = 0; row < 48; ++row) {
+        grid->appendRow();
+    }
+    QTRY_VERIFY_WITH_TIMEOUT(!missionPanel->isVisible(), kSettleTimeoutMs);
+    while (grid->property("rowCount").toInt() > savedRows) {
+        grid->deleteLastRow();
+    }
+    QTRY_VERIFY_WITH_TIMEOUT(missionPanel->isVisible(), kSettleTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(dockContains(instruments) && dockContains(actions), kSettleTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(dockContainsContent(), kSettleTimeoutMs);
+
+    _window->resize(731, 700);
+    QTRY_VERIFY_WITH_TIMEOUT(!missionPanel->isVisible(), kSettleTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(occluders->property("missionPanel").toRectF().isEmpty(), kSettleTimeoutMs);
+    QVERIFY(findVisibleItem(_rootItem, QStringLiteral("flyViewBottomRightRowLayout")));
+    QVERIFY(verifyVisibility(QStringLiteral("flyToolStrip_takeoffButton"), true,
+                             QStringLiteral("narrow workspace restores the takeoff action")));
+    QVERIFY(verifyEnabled(QStringLiteral("flyToolStrip_takeoffButton"), false,
+                          QStringLiteral("narrow offline takeoff disabled")));
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(instruments->y() + instruments->height() - widgetLayer->height()) < 1,
+                             kSettleTimeoutMs);
+    _window->resize(2440, 1000);
+    QTRY_VERIFY_WITH_TIMEOUT(missionPanel->isVisible(), kSettleTimeoutMs);
+    QVERIFY(verifyVisibility(QStringLiteral("flyToolStrip_takeoffButton"), false,
+                             QStringLiteral("desktop restoration removes the duplicate takeoff action")));
+    QTRY_VERIFY_WITH_TIMEOUT(dockContains(instruments) && dockContains(actions), kSettleTimeoutMs);
+    QTRY_VERIFY_WITH_TIMEOUT(dockContainsContent(), kSettleTimeoutMs);
+}
 
 void FlyViewOccluderUITest::_testVehicleUnderWidgetRecenters_data()
 {

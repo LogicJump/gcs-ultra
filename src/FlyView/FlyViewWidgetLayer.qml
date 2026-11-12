@@ -33,12 +33,37 @@ Item {
     property real   _margins:               ScreenTools.defaultFontPixelWidth / 2
     property real   _toolsMargin:           ScreenTools.defaultFontPixelWidth * 0.75
     property real   _rightPanelWidth:       ScreenTools.defaultFontPixelWidth * 30
-    property bool   _layoutSpacing:         ScreenTools.defaultFontPixelWidth
+    property real   _layoutSpacing:         ScreenTools.defaultFontPixelWidth
     property bool   _showSingleVehicleUI:   true
+
+    readonly property real _missionPanelWidth: ScreenTools.defaultFontPixelWidth * 30
+    readonly property real _toolStripRight: toolStrip.visible ? toolStrip.x + toolStrip.width : 0
+    readonly property real _desktopDockWidth: Math.max(_rightPanelWidth, bottomRightRowLayout.stackedWidth,
+                                                       topRightColumnLayout.implicitWidth) + _toolsMargin * 2
+    readonly property real _desktopDockHeight: topRightColumnLayout.implicitHeight
+                                               + bottomRightRowLayout.stackedHeight
+                                               + actionHeader.implicitHeight + actionGrid.implicitHeight
+                                               + _toolsMargin * 4 + ScreenTools.defaultFontPixelHeight
+    readonly property bool _desktopLayout: !ScreenTools.isMobile
+                                           && width >= ScreenTools.defaultFontPixelWidth * 160
+                                           && height >= ScreenTools.defaultFontPixelHeight * 40
+                                           && _desktopDockWidth <= width * 0.25
+                                           && toolStrip.width + _toolsMargin * 2 + _missionPanelWidth <= width * 0.25
+                                           && _desktopDockHeight <= height
+                                           && !virtualJoystickMultiTouch._virtualJoystickEnabled
+                                           && !topRightPanel.visible
+                                           && mapControl && mapControl.pipState.state === mapControl.pipState.fullState
+    readonly property bool _vehicleConnected: _activeVehicle && !_activeVehicle.vehicleLinkManager.communicationLost
+    readonly property bool _missionReady: (!_activeVehicle || _activeVehicle.initialPlanRequestComplete) && !_missionController.syncInProgress
+    readonly property bool _hasMission: _missionReady && _missionController.visualItems.count > 1
+
+    QGCPalette { id: workspacePalette }
 
     FlyViewOccluders {
         id:         _occluders
         pipView:    pipViewRect
+        missionPanel: missionPanelControl.visible ? Qt.rect(missionPanelControl.x, missionPanelControl.y, missionPanelControl.width, missionPanelControl.height) : Qt.rect(0, 0, 0, 0)
+        rightDock: rightDockBackground.visible ? Qt.rect(rightDockBackground.x, rightDockBackground.y, rightDockBackground.width, rightDockBackground.height) : Qt.rect(_root.width, 0, 0, 0)
         toolStrip:  toolStrip.visible ? Qt.rect(toolStrip.x, toolStrip.y, toolStrip.width, toolStrip.height) : Qt.rect(0, 0, 0, 0)
         mapScale:   mapScaleRow.coversMap ? Qt.rect(mapScaleRow.x, mapScaleRow.y, mapScaleRow.width, mapScaleRow.height) : Qt.rect(mapScaleRow.x, mapScaleRow.y, 0, 0)
         topRight: {
@@ -63,6 +88,212 @@ Item {
         }
     }
 
+    Rectangle {
+        id:                 missionPanelControl
+        objectName:         "flyViewMissionPanel"
+        anchors.left:       parent.left
+        anchors.leftMargin: _root._toolStripRight + _toolsMargin
+        anchors.top:        parent.top
+        width:              _root._missionPanelWidth
+        height:             _root._hasMission ? Math.max(0, pipViewRect.y - _toolsMargin)
+                                              : Math.min(missionColumn.implicitHeight + _toolsMargin * 2, Math.max(0, pipViewRect.y - _toolsMargin))
+        visible:            _root._desktopLayout
+        color:              workspacePalette.window
+
+        DeadMouseArea { anchors.fill: parent }
+
+        ColumnLayout {
+            id:                 missionColumn
+            anchors.fill:       parent
+            anchors.margins:    _toolsMargin
+            spacing:            ScreenTools.defaultFontPixelHeight * 0.5
+
+            QGCLabel {
+                Layout.fillWidth:   true
+                text:               qsTr("Mission")
+                font.weight:        Font.DemiBold
+            }
+
+            QGCLabel {
+                objectName:         "flyViewMissionState"
+                Layout.fillWidth:   true
+                text:               !_root._activeVehicle ? qsTr("No vehicle connected")
+                                    : !_root._vehicleConnected ? qsTr("Vehicle connection lost")
+                                    : _root._activeVehicle.flightMode || qsTr("Waiting for flight mode")
+                color:              workspacePalette.textSecondary
+                wrapMode:           Text.WordWrap
+            }
+
+            QGCLabel {
+                Layout.fillWidth:   true
+                visible:            _root._hasMission && _root._vehicleConnected && _root._missionController.currentMissionIndex >= 0
+                text:               qsTr("Current item: %1").arg(_root._missionController.currentMissionIndex)
+                wrapMode:           Text.WordWrap
+            }
+
+            RowLayout {
+                Layout.fillWidth:   true
+                visible:            _root._hasMission
+
+                QGCLabel {
+                    Layout.fillWidth:   true
+                    text:               qsTr("Planned distance")
+                    color:              workspacePalette.textSecondary
+                    font.pointSize:     ScreenTools.smallFontPointSize
+                    wrapMode:           Text.WordWrap
+                }
+
+                QGCLabel {
+                    text: {
+                        const distance = _root._missionController.missionPlannedDistance
+                        return isNaN(distance) ? "—"
+                            : QGroundControl.unitsConversion.metersToAppSettingsHorizontalDistanceUnits(distance).toFixed(0)
+                              + " " + QGroundControl.unitsConversion.appSettingsHorizontalDistanceUnitsString
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth:   true
+                implicitHeight:     1
+                color:              workspacePalette.borderSubtle
+            }
+
+            QGCLabel {
+                Layout.fillWidth:   true
+                visible:            !_root._missionReady
+                text:               qsTr("Reading mission…")
+                color:              workspacePalette.textSecondary
+            }
+
+            ListView {
+                id:                 missionList
+                Layout.fillWidth:   true
+                Layout.fillHeight:  true
+                clip:               true
+                visible:            _root._hasMission
+                model:              _root._missionController.visualItems
+                ScrollBar.vertical: ScrollBar { }
+
+                delegate: Rectangle {
+                    id: missionRow
+                    required property var object
+                    readonly property bool current: _root._missionReady && _root._vehicleConnected && object.isCurrentItem
+
+                    width:      missionList.width
+                    height:     Math.max(ScreenTools.defaultFontPixelHeight * 2, missionRowContent.implicitHeight + _root._toolsMargin)
+                    color:      current ? workspacePalette.accentSubtle : "transparent"
+
+                    RowLayout {
+                        id:                 missionRowContent
+                        anchors.left:       parent.left
+                        anchors.right:      parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.margins:    _root._margins
+                        spacing:            _root._toolsMargin
+
+                        QGCLabel {
+                            Layout.preferredWidth: ScreenTools.defaultFontPixelWidth * 3
+                            text:                  missionRow.object.sequenceNumber
+                            color:                 missionRow.current ? workspacePalette.accent : workspacePalette.textSecondary
+                        }
+
+                        QGCLabel {
+                            Layout.fillWidth:   true
+                            text:               missionRow.object.commandName
+                            wrapMode:           Text.WordWrap
+                            font.weight:        missionRow.current ? Font.DemiBold : Font.Normal
+                        }
+                    }
+                }
+            }
+
+            QGCLabel {
+                Layout.fillWidth:   true
+                visible:            _root._missionReady && !_root._hasMission
+                text:               qsTr("No mission loaded")
+                wrapMode:           Text.WordWrap
+            }
+
+            QGCButton {
+                Layout.fillWidth:   true
+                visible:            _root._missionReady && !_root._hasMission
+                text:               qsTr("Plan mission")
+                onClicked:          mainWindow.navigateWorkspace("plan")
+            }
+
+        }
+    }
+
+    Rectangle {
+        id:                 rightDockBackground
+        objectName:         "flyViewRightDock"
+        anchors.top:        parent.top
+        anchors.right:      parent.right
+        width:              _root._desktopDockWidth
+        height:             Math.min(parent.height, _root._desktopDockHeight)
+        color:              workspacePalette.window
+        visible:            _root._desktopLayout
+
+        DeadMouseArea { anchors.fill: parent }
+    }
+
+    GuidedActionTakeoff { id: dockTakeoffAction; objectName: "flyDock_takeoffAction" }
+    GuidedActionLand { id: dockLandAction; objectName: "flyDock_landAction" }
+    GuidedActionRTL { id: dockRTLAction }
+    GuidedActionPause { id: dockPauseAction }
+
+    ColumnLayout {
+        objectName:             "flyViewFlightActions"
+        anchors.right:          parent.right
+        anchors.rightMargin:    _toolsMargin
+        anchors.top:            bottomRightRowLayout.bottom
+        anchors.topMargin:      ScreenTools.defaultFontPixelHeight
+        width:                  rightDockBackground.width - _toolsMargin * 2
+        visible:                _root._desktopLayout
+        spacing:                _toolsMargin
+
+        QGCLabel {
+            id:                 actionHeader
+            Layout.fillWidth:   true
+            text:               qsTr("Flight actions")
+            font.weight:        Font.DemiBold
+        }
+
+        GridLayout {
+            id:               actionGrid
+            Layout.fillWidth: true
+            columns:          2
+            columnSpacing:    _root._toolsMargin
+            rowSpacing:       _root._toolsMargin
+
+            Repeater {
+                model: [
+                    { name: "takeoff", action: dockTakeoffAction },
+                    { name: "land", action: dockLandAction },
+                    { name: "rtl", action: dockRTLAction },
+                    { name: "pause", action: dockPauseAction }
+                ]
+
+                QGCButton {
+                    id: dockActionButton
+                    required property var modelData
+
+                    objectName:         "flyDock_" + modelData.name
+                    Layout.fillWidth:   true
+                    text:               modelData.action.text
+                    visible:            modelData.action.visible
+                    enabled:            modelData.action.enabled
+                    onClicked: {
+                        if (mainWindow.allowViewSwitch()) {
+                            modelData.action.triggered(dockActionButton)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     FlyViewTopRightPanel {
         id:                     topRightPanel
         anchors.top:            parent.top
@@ -74,6 +305,8 @@ Item {
         id:                 topRightColumnLayout
         anchors.top:        parent.top
         anchors.right:      parent.right
+        anchors.topMargin:  _root._desktopLayout ? _toolsMargin : 0
+        anchors.rightMargin: _root._desktopLayout ? _toolsMargin : 0
         spacing:            _layoutSpacing
         visible:           !topRightPanel.visible
     }
@@ -81,9 +314,26 @@ Item {
     FlyViewBottomRightRowLayout {
         id:                 bottomRightRowLayout
         objectName:         "flyViewBottomRightRowLayout"
+        anchors.topMargin:  _root._desktopLayout ? _toolsMargin : 0
         anchors.bottom:     parent.bottom
         anchors.right:      parent.right
-        spacing:            _layoutSpacing
+        anchors.rightMargin: _root._desktopLayout ? _toolsMargin : 0
+        anchors.bottomMargin: _root._desktopLayout ? _toolsMargin : 0
+        stacked:            _root._desktopLayout
+        rowSpacing:         _layoutSpacing
+        columnSpacing:      _layoutSpacing
+
+        states: State {
+            name: "desktop"
+            when: _root._desktopLayout
+
+            // Switch anchors together so a transient double anchor cannot stretch the grid.
+            AnchorChanges {
+                target:         bottomRightRowLayout
+                anchors.top:    topRightColumnLayout.bottom
+                anchors.bottom: undefined
+            }
+        }
     }
 
     FlyViewMissionCompleteDialog {
@@ -110,7 +360,9 @@ Item {
         anchors.bottom:             parent.bottom
         anchors.bottomMargin:       bottomLoaderMargin
         anchors.left:               parent.left
-        anchors.leftMargin:         ( y > toolStrip.y + toolStrip.height ? toolStrip.width / 2 : toolStrip.width * 1.05 + toolStrip.x)
+        anchors.leftMargin:         toolStrip.visible
+                                    ? (y > toolStrip.y + toolStrip.height ? toolStrip.width / 2 : toolStrip.width * 1.05 + toolStrip.x)
+                                    : _root._toolsMargin
         source:                     "qrc:/qml/QGroundControl/FlyView/VirtualJoystick.qml"
         active:                     _virtualJoystickEnabled && !(_activeVehicle ? _activeVehicle.usingHighLatencyLink : false)
 
@@ -146,7 +398,8 @@ Item {
         anchors.top:            parent.top
         z:                      QGroundControl.zOrderWidgets
         maxHeight:              pipViewRect.y - y - _toolsMargin
-        visible:                !QGroundControl.videoManager.fullScreen
+        visible:                !QGroundControl.videoManager.fullScreen && hasVisibleActions
+        showFlightActions:      !_root._desktopLayout
     }
 
     VehicleWarnings {
@@ -156,8 +409,9 @@ Item {
 
     Row {
         id:                 mapScaleRow
-        anchors.left:       toolStrip.right
-        anchors.leftMargin: _toolsMargin
+        anchors.left:       parent.left
+        anchors.leftMargin: (_root._desktopLayout ? missionPanelControl.x + missionPanelControl.width
+                                                  : _root._toolStripRight) + _toolsMargin
         anchors.top:        parent.top
         spacing:            _toolsMargin
 
@@ -185,8 +439,9 @@ Item {
 
     Viewer3DScaleBar {
         objectName:         "viewer3DScaleBar"
-        anchors.left:       toolStrip.right
-        anchors.leftMargin: _toolsMargin
+        anchors.left:       parent.left
+        anchors.leftMargin: (_root._desktopLayout ? missionPanelControl.x + missionPanelControl.width
+                                                  : _root._toolStripRight) + _toolsMargin
         anchors.top:        parent.top
         controller:         _root.viewer3DCameraController
         autoHide:           true

@@ -7,12 +7,14 @@ QtObject {
 
     property rect pipView
     property rect toolStrip
+    property rect missionPanel
+    property rect rightDock
     property rect topRight
     property rect bottomRight
     property rect mapScale
     property rect virtualJoystickLeft
     property rect virtualJoystickRight
 
-    readonly property var types: [ "pipView", "toolStrip", "topRight", "bottomRight", "mapScale", "virtualJoystickLeft", "virtualJoystickRight" ]
+    readonly property var types: [ "pipView", "toolStrip", "missionPanel", "rightDock", "topRight", "bottomRight", "mapScale", "virtualJoystickLeft", "virtualJoystickRight" ]
     readonly property var all: types.map(type => _root[type]).filter(r => r.width > 0 && r.height > 0)
 }

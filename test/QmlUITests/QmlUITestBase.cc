@@ -662,6 +662,12 @@ std::optional<bool> QmlUITestBase::expectSoftwareBackendWarnings(bool strict)
         }
         ignoreLogMessage("default", QtWarningMsg, QRegularExpression(QStringLiteral("isApiRhiBased")));
         ignoreLogMessage("default", QtWarningMsg, QRegularExpression(QStringLiteral("Qt Quick 3D is not functional")));
+        // The software backend never synchronizes a Quick 3D scene, so its window
+        // attachment has no render-context interface to drain adopted GPU resources
+        // when the intentionally instantiated View3D is destroyed during teardown.
+        ignoreLogMessage("default", QtWarningMsg,
+                         QRegularExpression(QStringLiteral(
+                             "^Pending resource cleanup queue not empty, but no RCI or window to clean it up!$")));
     }
     return rhiBased;
 }
